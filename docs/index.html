@@ -185,7 +185,9 @@ task project:stop</code></pre>
             <section id="client" class="section">
                 <h2>Client</h2>
                 <p>
-                    Plain HTML, CSS and TypeScript bundled by esbuild and served by the API. No external requests
+                    Plain HTML, CSS and TypeScript bundled by esbuild and served by the API. Bricolage Grotesque
+                    for the interface and IBM Plex Mono for links, hints and micro labels are self-hosted — the
+                    build emits their woff2 files under <code>/assets/</code> — so there are no external requests
                     at runtime.
                 </p>
                 <ul class="list">
@@ -199,19 +201,25 @@ task project:stop</code></pre>
                         End jump to the ends. The URL input is focused on load and Enter submits.
                     </li>
                     <li>
-                        <strong>Clipboard</strong> — the result is copied automatically, the short URL as text or
-                        the QR code as a PNG through <code>ClipboardItem</code>, with a toast in an
-                        <code>aria-live</code> region. Clicking the result copies again; when the clipboard is
-                        unavailable the toast says so instead.
+                        <strong>Clipboard</strong> — shorten mode shows the short link as a result button, the
+                        host above the 12 character code; QR mode draws the code as inline SVG modules animating
+                        outward from the centre, with the short URL beside it as a second copy button. The result
+                        is copied automatically — the short URL as text, or a PNG drawn on a canvas with a four
+                        module quiet zone and handed over through <code>ClipboardItem</code> — and a toast in an
+                        <code>aria-live</code> region reads <em>Copied to clipboard</em>. Either button copies
+                        again; when the clipboard is unavailable the toast reads
+                        <em>Copy failed, click the result to copy manually</em>.
                     </li>
                     <li>
-                        <strong>Expiry</strong> — directly under the short code the result card shows when the
-                        link dies, built from the <code>expiresAt</code> of the response: the largest whole unit
-                        left and the date, for example <em>Expires in 30 days &middot; 4 Oct 2026</em>.
+                        <strong>Expiry</strong> — directly under the short link the result card shows when it
+                        dies, built from the <code>expiresAt</code> of the response: the nearest whole unit left,
+                        picked out in the accent colour, then the date, for example
+                        <em>Expires in 30 days &middot; 4 Oct 2026</em>.
                     </li>
                     <li>
-                        <strong>Errors</strong> render inline with <code>role="alert"</code>; a 429 adds the
-                        seconds to wait, read from <code>Retry-After</code>.
+                        <strong>Errors</strong> render in a dedicated <code>role="alert"</code> element under the
+                        form, the short status code set in mono before the message; a 429 adds the seconds to
+                        wait, read from <code>Retry-After</code>.
                     </li>
                 </ul>
             </section>

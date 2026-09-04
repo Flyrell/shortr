@@ -140,8 +140,10 @@ a one hour `max-age`. All four are bot filtered.
 
 ## Client
 
-Plain HTML, CSS and TypeScript, bundled by esbuild into `apps/client/dist` and served by the API. No external
-requests are made at runtime.
+Plain HTML, CSS and TypeScript, bundled by esbuild into `apps/client/dist` and served by the API. Both
+typefaces — Bricolage Grotesque for the interface, IBM Plex Mono for links, hints and micro labels — are
+self-hosted: the build emits their woff2 files under `/assets/` next to the bundle, so no external requests are
+made at runtime.
 
 **Two modes**, a `role="tablist"` of *Shorten URL* and *QR code*. The chosen mode is stored in `localStorage`
 under `shortr.mode` and restored on the next visit; the default is *Shorten URL*.
@@ -149,17 +151,20 @@ under `shortr.mode` and restored on the next visit; the default is *Shorten URL*
 **Keyboard.** The tabs use a roving tabindex: Left/Right move between them, Home and End jump to the first
 and last, and switching clears the previous result. The URL input is focused on load and Enter submits the form.
 
-**Clipboard.** After a successful shorten the result appears as a button and is copied automatically — the
-short URL as text, or in QR mode the PNG via `ClipboardItem`. A toast announces `Copied to clipboard` through
-an `aria-live` region, and clicking or activating the result copies again. When the clipboard is unavailable —
-an insecure context or a denied permission — the toast reads `Copy failed, click the result to copy manually`.
-In QR mode the short URL is shown below the code as its own copy button.
+**Clipboard.** Shorten mode shows the short link as a focusable result button, the host above the 12 character
+code; QR mode draws the code as inline SVG modules that animate outward from the centre on a paper tile, with
+the short URL beside it as a second copy button. The result is copied automatically as soon as it appears — the
+short URL as text, or in QR mode a PNG drawn on a canvas with a four module quiet zone and handed over through
+`ClipboardItem`. A toast announces `Copied to clipboard` through an `aria-live` region, and clicking or
+activating either button copies again. When the clipboard is unavailable — an insecure context or a denied
+permission — the toast reads `Copy failed, click the result to copy manually`.
 
-**Expiry.** Directly under the short code the result card shows when the link dies, built from the `expiresAt`
-of the shorten response: the largest whole unit left over — days, hours or minutes — and the date, for example
-`Expires in 30 days · 4 Oct 2026`.
+**Expiry.** Directly under the short link the result card shows when it dies, built from the `expiresAt` of the
+shorten response: the nearest whole unit left — days, hours or minutes — picked out in the accent colour, then
+the date, for example `Expires in 30 days · 4 Oct 2026`.
 
-**Errors** render inline with `role="alert"`. A 429 adds the number of seconds to wait, read from `Retry-After`.
+**Errors** render in a dedicated `role="alert"` element under the form, the short status code set in mono
+before the message. A 429 adds the number of seconds to wait, read from `Retry-After`.
 
 ## Development
 
