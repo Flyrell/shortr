@@ -6,7 +6,9 @@ export type ShortenError = {
     readonly retryAfterSeconds?: number;
 };
 
-export type ShortenResult = { readonly kind: 'ok'; readonly shortUrl: string } | ShortenError;
+export type ShortenOk = { readonly kind: 'ok'; readonly shortUrl: string; readonly expiresAt: string };
+
+export type ShortenResult = ShortenOk | ShortenError;
 
 const SHORTEN_PATH = '/api/shorten';
 
@@ -28,7 +30,7 @@ export async function postShorten(url: string): Promise<ShortenResult> {
             message: 'The server sent a response we could not understand.',
         };
     }
-    return { kind: 'ok', shortUrl: body.shortUrl };
+    return { kind: 'ok', shortUrl: body.shortUrl, expiresAt: body.expiresAt };
 }
 
 async function readJson(response: Response): Promise<unknown> {
@@ -58,13 +60,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null;
 }
 
-function isShortenBody(value: unknown): value is { code: string; shortUrl: string; expiresAt: string } {
-    return (
-        isRecord(value) &&
-        typeof value.code === 'string' &&
-        typeof value.shortUrl === 'string' &&
-        typeof value.expiresAt === 'string'
-    );
+function isShortenBody(value: unknown): value is { shortUrl: string; expiresAt: string } {
+    return isRecord(value) && typeof value.shortUrl === 'string' && typeof value.expiresAt === 'string';
 }
 
 function readCode(body: unknown, status: number): string {

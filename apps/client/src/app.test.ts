@@ -4,18 +4,22 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { mountApp } from './app';
 import { copyPng, copyText } from './clipboard';
 import { requireElement } from './dom';
-import { renderQr } from './qr';
+import { drawQrPng, drawQrSvg, encodeQr } from './qr';
 
 vi.mock('./clipboard', () => ({ copyText: vi.fn(), copyPng: vi.fn() }));
-vi.mock('./qr', () => ({ renderQr: vi.fn() }));
+vi.mock('./qr', () => ({ encodeQr: vi.fn(), drawQrSvg: vi.fn(), drawQrPng: vi.fn() }));
 
 const copyTextMock = vi.mocked(copyText);
 const copyPngMock = vi.mocked(copyPng);
-const renderQrMock = vi.mocked(renderQr);
+const encodeQrMock = vi.mocked(encodeQr);
+const drawQrSvgMock = vi.mocked(drawQrSvg);
+const drawQrPngMock = vi.mocked(drawQrPng);
 const fetchMock = vi.fn<typeof fetch>();
 
 const bodyMarkup = readBodyMarkup();
 const qrBlob = new Blob([new Uint8Array([137, 80, 78, 71])], { type: 'image/png' });
+const SHORT_URL = 'https://s.io/abc123DEF456';
+const EXPIRES_AT = new Date(Date.now() + 30 * 86_400_000 + 3_600_000).toISOString();
 
 function readBodyMarkup(): string {
     const html = readFileSync(join(import.meta.dirname, 'index.html'), 'utf8');
@@ -33,17 +37,13 @@ function jsonResponse(status: number, body: unknown, headers: Record<string, str
     });
 }
 
-function shortenedResponse(): Response {
-    return jsonResponse(201, {
-        code: 'abc1234',
-        shortUrl: 'https://s.io/abc1234',
-        expiresAt: '2026-10-04T00:00:00Z',
-    });
+function shortenedResponse(expiresAt = EXPIRES_AT): Response {
+    return jsonResponse(201, { code: 'abc123DEF456', shortUrl: SHORT_URL, expiresAt });
 }
 
 function submit(url: string): void {
     requireElement(document, '#url', HTMLInputElement).value = url;
-    requireElement(document, '#shorten-form', HTMLFormElement).dispatchEvent(
+    requireElement(document, '#panel', HTMLFormElement).dispatchEvent(
         new Event('submit', { bubbles: true, cancelable: true }),
     );
 }
@@ -62,12 +62,20 @@ function deferFetch(): () => void {
     };
 }
 
-function resultText(): string {
-    return requireElement(document, '#result', HTMLElement).textContent ?? '';
+function codeText(): string {
+    return requireElement(document, '#result .link-code', HTMLElement).textContent ?? '';
+}
+
+function alertText(): string {
+    return requireElement(document, '#error span', HTMLElement).textContent ?? '';
 }
 
 function toastText(): string {
     return requireElement(document, '#toast', HTMLElement).textContent ?? '';
+}
+
+function submitButton(): HTMLButtonElement {
+    return requireElement(document, '#submit', HTMLButtonElement);
 }
 
 beforeEach(() => {
@@ -75,7 +83,9 @@ beforeEach(() => {
     window.localStorage.clear();
     copyTextMock.mockReset().mockResolvedValue(true);
     copyPngMock.mockReset().mockResolvedValue(true);
-    renderQrMock.mockReset().mockResolvedValue({ dataUrl: 'data:image/png;base64,AAAA', blob: qrBlob });
+    encodeQrMock.mockReset().mockReturnValue({ size: 1, isDark: () => true });
+    drawQrSvgMock.mockReset().mockReturnValue(document.createElementNS('http://www.w3.org/2000/svg', 'svg'));
+    drawQrPngMock.mockReset().mockResolvedValue(qrBlob);
     fetchMock.mockReset().mockResolvedValue(shortenedResponse());
     vi.stubGlobal('fetch', fetchMock);
 });
@@ -92,38 +102,37 @@ describe('mountApp', () => {
 
         expect(requireElement(document, '#tab-qr', HTMLButtonElement).getAttribute('aria-selected')).toBe('true');
         expect(requireElement(document, '#tab-shorten', HTMLButtonElement).tabIndex).toBe(-1);
-        expect(requireElement(document, '#panel', HTMLElement).getAttribute('aria-labelledby')).toBe('tab-qr');
+        expect(requireElement(document, '#panel', HTMLFormElement).getAttribute('aria-labelledby')).toBe('tab-qr');
         expect(requireElement(document, '#url-label', HTMLLabelElement).textContent).toBe('URL to encode');
-        expect(requireElement(document, '#submit', HTMLButtonElement).textContent).toBe('Create QR code');
+        expect(requireElement(document, '#submit-label', HTMLElement).textContent).toBe('Create QR code');
     });
 
-    test('starts in the shorten mode when nothing is stored', () => {
+    test('starts in the shorten mode when nothing is stored and parks the pill left', () => {
         mountApp(document);
 
         expect(requireElement(document, '#tab-shorten', HTMLButtonElement).getAttribute('aria-selected')).toBe('true');
-        expect(requireElement(document, '#panel', HTMLElement).getAttribute('aria-labelledby')).toBe('tab-shorten');
+        expect(requireElement(document, '#tabs', HTMLElement).style.getPropertyValue('--pill')).toBe('0%');
         expect(requireElement(document, '#url-label', HTMLLabelElement).textContent).toBe('URL to shorten');
-        expect(requireElement(document, '#submit', HTMLButtonElement).textContent).toBe('Shorten');
+        expect(requireElement(document, '#submit-label', HTMLElement).textContent).toBe('Shorten');
     });
 
     test('persists the mode when another tab is picked and clears the result', async () => {
         mountApp(document);
         submit('https://example.com/long');
-        await vi.waitFor(() => expect(resultText()).toContain('https://s.io/abc1234'));
+        await vi.waitFor(() => expect(codeText()).toBe('abc123DEF456'));
 
         requireElement(document, '#tab-qr', HTMLButtonElement).click();
 
         expect(window.localStorage.getItem('shortr.mode')).toBe('qr');
-        expect(resultText()).toBe('');
-        expect(requireElement(document, '#url-label', HTMLLabelElement).textContent).toBe('URL to encode');
+        expect(requireElement(document, '#result', HTMLElement).childElementCount).toBe(0);
+        expect(requireElement(document, '#tabs', HTMLElement).style.getPropertyValue('--pill')).toBe('100%');
     });
 
     test('announces the result from a polite live region', () => {
         mountApp(document);
 
-        const region = requireElement(document, '#result', HTMLElement);
-        expect(region.getAttribute('role')).toBe('region');
-        expect(region.getAttribute('aria-live')).toBe('polite');
+        expect(requireElement(document, '#result', HTMLElement).getAttribute('aria-live')).toBe('polite');
+        expect(requireElement(document, '#error', HTMLElement).getAttribute('role')).toBe('alert');
     });
 
     test('shows an inline alert when the input is empty', () => {
@@ -131,22 +140,43 @@ describe('mountApp', () => {
 
         submit('   ');
 
-        const alert = requireElement(document, '#result p', HTMLParagraphElement);
-        expect(alert.getAttribute('role')).toBe('alert');
-        expect(alert.textContent).toBe('Enter a URL first.');
+        expect(requireElement(document, '#error b', HTMLElement).textContent).toBe('check');
+        expect(alertText()).toBe('Enter a URL first.');
         expect(fetchMock).not.toHaveBeenCalled();
     });
 
-    test('renders the short URL, auto-copies it and toasts', async () => {
+    test('returns focus to the input when it is empty', () => {
+        mountApp(document);
+        requireElement(document, '#submit', HTMLButtonElement).focus();
+
+        submit('   ');
+
+        expect(document.activeElement).toBe(requireElement(document, '#url', HTMLInputElement));
+    });
+
+    test('renders the short URL with its expiry, auto-copies it and toasts', async () => {
         mountApp(document);
 
         submit('https://example.com/long');
 
-        await vi.waitFor(() => expect(copyTextMock).toHaveBeenCalledWith('https://s.io/abc1234'));
-        const button = requireElement(document, '#result button', HTMLButtonElement);
-        expect(button.textContent).toBe('https://s.io/abc1234');
-        expect(button.getAttribute('aria-label')).toBe('Copy short URL https://s.io/abc1234');
+        await vi.waitFor(() => expect(copyTextMock).toHaveBeenCalledWith(SHORT_URL));
+        expect(document.querySelectorAll('#result .link-code span')).toHaveLength(12);
+        expect(requireElement(document, '#result .link-host', HTMLElement).textContent).toBe('s.io/');
+        expect(requireElement(document, '#result .expiry b', HTMLElement).textContent).toBe('in 30 days');
+        expect(requireElement(document, '#copy-link', HTMLButtonElement).getAttribute('aria-label')).toBe(
+            `Copy ${SHORT_URL} to clipboard`,
+        );
         expect(toastText()).toBe('Copied to clipboard');
+    });
+
+    test('leaves the expiry line out when the server sends an unusable date', async () => {
+        fetchMock.mockResolvedValue(shortenedResponse('not-a-date'));
+        mountApp(document);
+
+        submit('https://example.com/long');
+
+        await vi.waitFor(() => expect(codeText()).toBe('abc123DEF456'));
+        expect(document.querySelector('#result .expiry')).toBeNull();
     });
 
     test('copies again and toasts when the result button is activated', async () => {
@@ -155,7 +185,7 @@ describe('mountApp', () => {
         await vi.waitFor(() => expect(toastText()).toBe('Copied to clipboard'));
         requireElement(document, '#toast', HTMLElement).textContent = '';
 
-        requireElement(document, '#result button', HTMLButtonElement).click();
+        requireElement(document, '#copy-link', HTMLButtonElement).click();
 
         await vi.waitFor(() => expect(copyTextMock).toHaveBeenCalledTimes(2));
         expect(toastText()).toBe('Copied to clipboard');
@@ -170,21 +200,17 @@ describe('mountApp', () => {
         await vi.waitFor(() => expect(toastText()).toBe('Copy failed, click the result to copy manually'));
     });
 
-    test('renders a QR image, auto-copies the PNG and offers the short URL', async () => {
+    test('renders a QR code, auto-copies the PNG and offers the short URL', async () => {
         window.localStorage.setItem('shortr.mode', 'qr');
         mountApp(document);
 
         submit('https://example.com/long');
 
         await vi.waitFor(() => expect(copyPngMock).toHaveBeenCalledWith(qrBlob));
-        expect(renderQrMock).toHaveBeenCalledWith('https://s.io/abc1234', document);
-        const image = requireElement(document, '#result img', HTMLImageElement);
-        expect(image.alt).toBe('QR code for https://s.io/abc1234');
-        expect(
-            requireElement(document, '#result .result__button--qr', HTMLButtonElement).getAttribute('aria-label'),
-        ).toBe('Copy QR code for https://s.io/abc1234');
-        expect(image.getAttribute('src')).toBe('data:image/png;base64,AAAA');
-        expect(document.querySelectorAll('#result button')).toHaveLength(2);
+        expect(encodeQrMock).toHaveBeenCalledWith(SHORT_URL);
+        expect(document.querySelector('#copy-png svg')).not.toBeNull();
+        expect(requireElement(document, '#copy-link', HTMLButtonElement).textContent).toBe(SHORT_URL);
+        expect(requireElement(document, '#result .expiry b', HTMLElement).textContent).toBe('in 30 days');
         expect(toastText()).toBe('Copied to clipboard');
     });
 
@@ -194,7 +220,7 @@ describe('mountApp', () => {
         submit('https://example.com/long');
         await vi.waitFor(() => expect(copyPngMock).toHaveBeenCalledTimes(1));
 
-        requireElement(document, '#result .result__button--qr', HTMLButtonElement).click();
+        requireElement(document, '#copy-png', HTMLButtonElement).click();
 
         await vi.waitFor(() => expect(copyPngMock).toHaveBeenCalledTimes(2));
     });
@@ -205,20 +231,22 @@ describe('mountApp', () => {
         submit('https://example.com/long');
         await vi.waitFor(() => expect(copyPngMock).toHaveBeenCalledTimes(1));
 
-        requireElement(document, '#result button:not(.result__button--qr)', HTMLButtonElement).click();
+        requireElement(document, '#copy-link', HTMLButtonElement).click();
 
-        await vi.waitFor(() => expect(copyTextMock).toHaveBeenCalledWith('https://s.io/abc1234'));
+        await vi.waitFor(() => expect(copyTextMock).toHaveBeenCalledWith(SHORT_URL));
         expect(toastText()).toBe('Copied to clipboard');
     });
 
-    test('reports a QR rendering failure inline', async () => {
+    test('reports a QR encoding failure inline', async () => {
         window.localStorage.setItem('shortr.mode', 'qr');
-        renderQrMock.mockRejectedValue(new Error('too much data'));
+        encodeQrMock.mockImplementation(() => {
+            throw new Error('too much data');
+        });
         mountApp(document);
 
         submit('https://example.com/long');
 
-        await vi.waitFor(() => expect(resultText()).toBe('The QR code could not be rendered.'));
+        await vi.waitFor(() => expect(alertText()).toBe('The QR code could not be rendered.'));
         expect(copyPngMock).not.toHaveBeenCalled();
     });
 
@@ -230,8 +258,8 @@ describe('mountApp', () => {
 
         submit('https://example.com/long');
 
-        await vi.waitFor(() => expect(resultText()).toBe('Too many requests. Try again in 30 seconds.'));
-        expect(requireElement(document, '#result p', HTMLParagraphElement).getAttribute('role')).toBe('alert');
+        await vi.waitFor(() => expect(alertText()).toBe('Too many requests. Try again in 30 seconds.'));
+        expect(requireElement(document, '#error b', HTMLElement).textContent).toBe('rate_limited');
     });
 
     test('reports a network failure inline', async () => {
@@ -241,7 +269,7 @@ describe('mountApp', () => {
         submit('https://example.com/long');
 
         await vi.waitFor(() =>
-            expect(resultText()).toBe('The server could not be reached. Check your connection and try again.'),
+            expect(alertText()).toBe('The server could not be reached. Check your connection and try again.'),
         );
     });
 
@@ -253,34 +281,36 @@ describe('mountApp', () => {
         requireElement(document, '#tab-qr', HTMLButtonElement).click();
         release();
 
-        await vi.waitFor(() => expect(copyTextMock).toHaveBeenCalledWith('https://s.io/abc1234'));
-        expect(renderQrMock).not.toHaveBeenCalled();
-        expect(document.querySelector('#result img')).toBeNull();
+        await vi.waitFor(() => expect(copyTextMock).toHaveBeenCalledWith(SHORT_URL));
+        expect(encodeQrMock).not.toHaveBeenCalled();
+        expect(document.querySelector('#copy-png')).toBeNull();
     });
 
-    test('re-enables the form as soon as the result is on screen', async () => {
-        copyTextMock.mockReturnValue(new Promise<boolean>(() => undefined));
-        mountApp(document);
-        const button = requireElement(document, '#submit', HTMLButtonElement);
-
-        submit('https://example.com/long');
-
-        await vi.waitFor(() => expect(resultText()).toContain('https://s.io/abc1234'));
-        expect(button.disabled).toBe(false);
-    });
-
-    test('disables the submit button while the request is in flight', async () => {
+    test('shows pending dots while the request is in flight and refuses a second submit', async () => {
         const release = deferFetch();
         mountApp(document);
-        const button = requireElement(document, '#submit', HTMLButtonElement);
 
         submit('https://example.com/long');
-        await vi.waitFor(() => expect(button.disabled).toBe(true));
+        await vi.waitFor(() => expect(submitButton().getAttribute('aria-disabled')).toBe('true'));
+        expect(requireElement(document, '#submit-label', HTMLElement).textContent).toBe('Shortening');
+        expect(document.querySelectorAll('#submit .dots i')).toHaveLength(3);
 
         submit('https://example.com/another');
         expect(fetchMock).toHaveBeenCalledTimes(1);
 
         release();
-        await vi.waitFor(() => expect(button.disabled).toBe(false));
+        await vi.waitFor(() => expect(submitButton().hasAttribute('aria-disabled')).toBe(false));
+        expect(requireElement(document, '#submit-label', HTMLElement).textContent).toBe('Shorten');
+        expect(document.querySelector('#submit .dots')).toBeNull();
+    });
+
+    test('stops pending as soon as the result is on screen', async () => {
+        copyTextMock.mockReturnValue(new Promise<boolean>(() => undefined));
+        mountApp(document);
+
+        submit('https://example.com/long');
+
+        await vi.waitFor(() => expect(codeText()).toBe('abc123DEF456'));
+        expect(submitButton().getAttribute('aria-busy')).toBe('false');
     });
 });

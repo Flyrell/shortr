@@ -30,6 +30,10 @@ function selection(): (string | null)[] {
     );
 }
 
+function pill(): string {
+    return requireElement(document, '#tabs', HTMLElement).style.getPropertyValue('--pill');
+}
+
 function panelLabel(): string | null {
     return requireElement(document, '#panel', HTMLElement).getAttribute('aria-labelledby');
 }
@@ -50,6 +54,25 @@ describe('createTabs', () => {
         expect(requireElement(document, '#tab-shorten', HTMLButtonElement).tabIndex).toBe(-1);
         expect(requireElement(document, '#tab-qr', HTMLButtonElement).tabIndex).toBe(0);
         expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    test('select slides the pill onto the selected tab', () => {
+        const tabs = createTabs(tablist(), onSelect);
+
+        tabs.select('x');
+        expect(pill()).toBe('200%');
+
+        tabs.select('shorten');
+        expect(pill()).toBe('0%');
+    });
+
+    test('select leaves the pill where it is for a value no tab carries', () => {
+        const tabs = createTabs(tablist(), onSelect);
+        tabs.select('qr');
+
+        tabs.select('nope');
+
+        expect(pill()).toBe('100%');
     });
 
     test('select names the controlled panel after the selected tab', () => {

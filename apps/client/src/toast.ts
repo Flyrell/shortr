@@ -1,7 +1,7 @@
-type ToastController = { show: (message: string) => void };
+export type ToastController = { readonly show: (message: string) => void };
 
-const VISIBLE_CLASS = 'toast--visible';
-const VISIBLE_MS = 2500;
+const VISIBLE_CLASS = 'on';
+const VISIBLE_MS = 2600;
 
 export function createToast(element: HTMLElement): ToastController {
     let timer = 0;

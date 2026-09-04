@@ -10,12 +10,20 @@
         <script type="module" src="/assets/main.js"></script>
     </head>
     <body>
-        <div class="app">
-            <header class="app__header">
-                <h1 class="app__title">shortr</h1>
-                <div class="tabs" id="tabs" role="tablist" aria-label="Mode">
+        <div class="grid" aria-hidden="true"></div>
+
+        <div class="stage">
+            <header class="brand">
+                <span class="wordmark"><b>shortr</b></span>
+                <p class="tagline">
+                    Long links in, short links out. Every link expires. Nothing to sign up for.
+                </p>
+            </header>
+
+            <main class="panel">
+                <div class="tabs" id="tabs" role="tablist" aria-label="Output type">
                     <button
-                        class="tab"
+                        class="tab ring"
                         type="button"
                         role="tab"
                         id="tab-shorten"
@@ -27,7 +35,7 @@
                         Shorten URL
                     </button>
                     <button
-                        class="tab"
+                        class="tab ring"
                         type="button"
                         role="tab"
                         id="tab-qr"
@@ -39,13 +47,14 @@
                         QR code
                     </button>
                 </div>
-            </header>
-            <main>
-                <div class="panel" id="panel" role="tabpanel" aria-labelledby="tab-shorten">
-                    <form class="form" id="shorten-form" novalidate>
-                        <label class="form__label" id="url-label" for="url">URL to shorten</label>
+
+                <form class="form" id="panel" role="tabpanel" aria-labelledby="tab-shorten" novalidate>
+                    <div class="label-row">
+                        <label for="url" id="url-label">URL to shorten</label>
+                        <span class="micro" aria-hidden="true">01</span>
+                    </div>
+                    <div class="shell ring">
                         <input
-                            class="form__input"
                             id="url"
                             name="url"
                             type="url"
@@ -53,14 +62,23 @@
                             autofocus
                             autocomplete="off"
                             spellcheck="false"
-                            placeholder="https://example.com/a-rather-long-link"
+                            inputmode="url"
+                            placeholder="https://example.com/a/rather/long/path"
+                            aria-describedby="url-hint"
                         />
-                        <button class="form__submit" id="submit" type="submit">Shorten</button>
-                    </form>
-                    <div class="result" id="result" role="region" aria-label="Result" aria-live="polite"></div>
-                </div>
+                    </div>
+                    <span class="hint" id="url-hint">Include the https:// prefix.</span>
+                    <button class="submit ring" type="submit" id="submit">
+                        <span id="submit-label">Shorten</span>
+                    </button>
+                </form>
+
+                <p class="alert" id="error" role="alert" hidden></p>
+
+                <div class="live" id="result" aria-live="polite"></div>
             </main>
-            <p class="toast" id="toast" role="status" aria-live="polite"></p>
         </div>
+
+        <p class="toast" id="toast" role="status" aria-live="polite"></p>
     </body>
 </html>

@@ -1,10 +1,13 @@
 type TabsController = { select: (value: string) => void };
 
+const PILL_PROPERTY = '--pill';
+
 export function createTabs(tablist: HTMLElement, onSelect: (value: string) => void): TabsController {
     const tabs = collectTabs(tablist);
 
     function render(value: string): void {
-        const selected = tabs.find((tab) => tab.dataset.value === value);
+        const index = tabs.findIndex((tab) => tab.dataset.value === value);
+        const selected = tabs[index];
         if (selected === undefined) {
             return;
         }
@@ -12,6 +15,7 @@ export function createTabs(tablist: HTMLElement, onSelect: (value: string) => vo
             tab.setAttribute('aria-selected', String(tab === selected));
             tab.tabIndex = tab === selected ? 0 : -1;
         }
+        tablist.style.setProperty(PILL_PROPERTY, `${index * 100}%`);
         labelPanel(selected);
     }
 

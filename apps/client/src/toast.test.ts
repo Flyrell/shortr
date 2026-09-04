@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { createToast } from './toast';
 
-const VISIBLE_MS = 2500;
+const VISIBLE_MS = 2600;
 
 function element(): HTMLElement {
     const paragraph = document.createElement('p');
@@ -39,7 +39,7 @@ describe('createToast', () => {
         createToast(target).show('Copied to clipboard');
 
         expect(target.textContent).toBe('Copied to clipboard');
-        expect(target.classList.contains('toast--visible')).toBe(true);
+        expect(target.classList.contains('on')).toBe(true);
         expect(target.getAttribute('aria-live')).toBe('polite');
     });
 
@@ -48,10 +48,10 @@ describe('createToast', () => {
 
         createToast(target).show('Copied to clipboard');
         vi.advanceTimersByTime(VISIBLE_MS - 1);
-        expect(target.classList.contains('toast--visible')).toBe(true);
+        expect(target.classList.contains('on')).toBe(true);
 
         vi.advanceTimersByTime(1);
-        expect(target.classList.contains('toast--visible')).toBe(false);
+        expect(target.classList.contains('on')).toBe(false);
         expect(target.textContent).toBe('');
     });
 
@@ -76,7 +76,7 @@ describe('createToast', () => {
         vi.advanceTimersByTime(VISIBLE_MS - 100);
 
         expect(target.textContent).toBe('second');
-        expect(target.classList.contains('toast--visible')).toBe(true);
+        expect(target.classList.contains('on')).toBe(true);
 
         vi.advanceTimersByTime(100);
         expect(target.textContent).toBe('');

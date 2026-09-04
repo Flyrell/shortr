@@ -70,10 +70,20 @@ describe('run', () => {
             expect.stringMatching(/src\/main\.ts$/),
             expect.stringMatching(/src\/styles\.css$/),
         ]);
-        expect(options.outdir).toMatch(/dist\/assets$/);
+        expect(options.outdir).toMatch(/dist$/);
+        expect(options.entryNames).toBe('assets/[name]');
         expect(options.bundle).toBe(true);
         expect(options.minify).toBe(true);
         expect(options.sourcemap).toBe(false);
+    });
+
+    test('emits font files under assets and references them from the site root', async () => {
+        await run([]);
+
+        const options = buildOptions(mocks.build.mock.calls[0]?.[0]);
+        expect(options.assetNames).toBe('assets/[name]-[hash]');
+        expect(options.publicPath).toBe('/');
+        expect(options.loader).toEqual({ '.woff2': 'file', '.woff': 'file' });
     });
 
     test('creates dist and copies every static file', async () => {

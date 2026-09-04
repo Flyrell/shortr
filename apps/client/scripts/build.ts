@@ -13,7 +13,12 @@ const staticFiles = ['index.html', 'robots.txt', 'favicon.svg'];
 function buildOptions(watchMode: boolean): BuildOptions {
     return {
         entryPoints: [join(srcDir, 'main.ts'), join(srcDir, 'styles.css')],
-        outdir: join(distDir, 'assets'),
+        outdir: distDir,
+        entryNames: 'assets/[name]',
+        assetNames: 'assets/[name]-[hash]',
+        // The served origin is the site root, so font url() references resolve to /assets/... .
+        publicPath: '/',
+        loader: { '.woff2': 'file', '.woff': 'file' },
         bundle: true,
         minify: true,
         sourcemap: watchMode,

@@ -1,8 +1,9 @@
 import { expect, test } from '@playwright/test';
 import {
     COPIED_MESSAGE,
-    SHORT_URL_PATTERN,
-    shortUrlButton,
+    SHORT_CODE_PATTERN,
+    shortCode,
+    shortLinkButton,
     TARGET_URL,
     TOAST_VISIBLE_CLASS,
     tab,
@@ -20,8 +21,8 @@ test('completes the shorten flow with the keyboard alone', async ({ page }) => {
     await page.keyboard.type(TARGET_URL);
     await page.keyboard.press('Enter');
 
-    const result = shortUrlButton(page);
-    await expect(result).toHaveText(SHORT_URL_PATTERN);
+    const result = shortLinkButton(page);
+    await expect(shortCode(page)).toHaveText(SHORT_CODE_PATTERN);
     await expect(toast(page)).toHaveText(COPIED_MESSAGE);
     await expect(toast(page)).not.toHaveClass(TOAST_VISIBLE_CLASS);
 

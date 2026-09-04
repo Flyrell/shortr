@@ -1,40 +1,42 @@
 import type { ShortenError, ShortenResult } from './api';
 import { postShorten } from './api';
-import { copyPng, copyText } from './clipboard';
 import { requireElement } from './dom';
+import { describeExpiry } from './expiry';
 import type { Mode } from './mode';
 import { isMode, load, save } from './mode';
-import type { QrImage } from './qr';
-import { renderQr } from './qr';
+import type { AutoCopy } from './output';
+import { createOutput } from './output';
 import { createTabs } from './tabs';
 import { createToast } from './toast';
 
-type AutoCopy = () => void;
+type ModeText = { readonly label: string; readonly submit: string; readonly pending: string };
 
-const COPIED_MESSAGE = 'Copied to clipboard';
-const COPY_FAILED_MESSAGE = 'Copy failed, click the result to copy manually';
-
-const FORM_TEXT: Record<Mode, { label: string; submit: string }> = {
-    shorten: { label: 'URL to shorten', submit: 'Shorten' },
-    qr: { label: 'URL to encode', submit: 'Create QR code' },
+const MODE_TEXT: Record<Mode, ModeText> = {
+    shorten: { label: 'URL to shorten', submit: 'Shorten', pending: 'Shortening' },
+    qr: { label: 'URL to encode', submit: 'Create QR code', pending: 'Encoding' },
 };
 
 export function mountApp(root: Document): void {
     const tablist = requireElement(root, '#tabs', HTMLElement);
-    const form = requireElement(root, '#shorten-form', HTMLFormElement);
+    const form = requireElement(root, '#panel', HTMLFormElement);
     const label = requireElement(root, '#url-label', HTMLLabelElement);
     const input = requireElement(root, '#url', HTMLInputElement);
     const submit = requireElement(root, '#submit', HTMLButtonElement);
-    const result = requireElement(root, '#result', HTMLElement);
-    const toast = createToast(requireElement(root, '#toast', HTMLElement));
+    const submitLabel = requireElement(root, '#submit-label', HTMLElement);
+    const output = createOutput({
+        doc: root,
+        result: requireElement(root, '#result', HTMLElement),
+        errorBox: requireElement(root, '#error', HTMLElement),
+        toast: createToast(requireElement(root, '#toast', HTMLElement)),
+    });
 
     let mode: Mode = 'shorten';
     let pending = false;
 
     function applyMode(value: Mode): void {
         mode = value;
-        label.textContent = FORM_TEXT[value].label;
-        submit.textContent = FORM_TEXT[value].submit;
+        label.textContent = MODE_TEXT[value].label;
+        submitLabel.textContent = MODE_TEXT[value].submit;
     }
 
     const tabs = createTabs(tablist, (value) => {
@@ -43,75 +45,22 @@ export function mountApp(root: Document): void {
         }
         applyMode(value);
         save(value);
-        result.replaceChildren();
+        output.clear();
     });
     applyMode(load());
     tabs.select(mode);
 
-    function resultButton(ariaLabel: string): HTMLButtonElement {
-        const button = root.createElement('button');
-        button.type = 'button';
-        button.className = 'result__button';
-        button.setAttribute('aria-label', ariaLabel);
-        return button;
-    }
-
-    async function copyTextAndToast(text: string): Promise<void> {
-        toast.show((await copyText(text)) ? COPIED_MESSAGE : COPY_FAILED_MESSAGE);
-    }
-
-    async function copyPngAndToast(blob: Blob): Promise<void> {
-        toast.show((await copyPng(blob)) ? COPIED_MESSAGE : COPY_FAILED_MESSAGE);
-    }
-
-    function linkButton(shortUrl: string): HTMLButtonElement {
-        const button = resultButton(`Copy short URL ${shortUrl}`);
-        button.textContent = shortUrl;
-        button.addEventListener('click', () => {
-            void copyTextAndToast(shortUrl);
-        });
-        return button;
-    }
-
-    function qrButton(shortUrl: string, image: QrImage): HTMLButtonElement {
-        const button = resultButton(`Copy QR code for ${shortUrl}`);
-        button.classList.add('result__button--qr');
-        const picture = root.createElement('img');
-        picture.src = image.dataUrl;
-        picture.alt = `QR code for ${shortUrl}`;
-        button.append(picture);
-        button.addEventListener('click', () => {
-            void copyPngAndToast(image.blob);
-        });
-        return button;
-    }
-
-    function renderError(message: string): void {
-        const paragraph = root.createElement('p');
-        paragraph.className = 'result__error';
-        paragraph.setAttribute('role', 'alert');
-        paragraph.textContent = message;
-        result.replaceChildren(paragraph);
-    }
-
-    async function renderResult(shortUrl: string, requestMode: Mode): Promise<AutoCopy | null> {
-        if (requestMode === 'shorten') {
-            result.replaceChildren(linkButton(shortUrl));
-            return () => {
-                void copyTextAndToast(shortUrl);
-            };
+    function setPending(value: boolean): void {
+        pending = value;
+        submit.setAttribute('aria-busy', String(value));
+        submitLabel.textContent = value ? MODE_TEXT[mode].pending : MODE_TEXT[mode].submit;
+        submit.querySelector('.dots')?.remove();
+        if (!value) {
+            submit.removeAttribute('aria-disabled');
+            return;
         }
-        let image: QrImage;
-        try {
-            image = await renderQr(shortUrl, root);
-        } catch {
-            renderError('The QR code could not be rendered.');
-            return null;
-        }
-        result.replaceChildren(qrButton(shortUrl, image), linkButton(shortUrl));
-        return () => {
-            void copyPngAndToast(image.blob);
-        };
+        submit.setAttribute('aria-disabled', 'true');
+        submit.append(createDots(root));
     }
 
     async function handleSubmit(): Promise<void> {
@@ -120,25 +69,29 @@ export function mountApp(root: Document): void {
         }
         const url = input.value.trim();
         if (url === '') {
-            renderError('Enter a URL first.');
+            output.showError('check', 'Enter a URL first.');
+            input.focus();
             return;
         }
         const requestMode = mode;
-        pending = true;
-        submit.disabled = true;
+        output.clear();
+        setPending(true);
         let autoCopy: AutoCopy | null = null;
         try {
             const response = await requestShortUrl(url);
             if (response.kind === 'error') {
-                renderError(describeError(response));
+                output.showError(response.code, describeError(response));
                 return;
             }
-            autoCopy = await renderResult(response.shortUrl, requestMode);
+            const expiry = describeExpiry(response.expiresAt, new Date());
+            autoCopy =
+                requestMode === 'shorten'
+                    ? output.renderLink(response.shortUrl, expiry)
+                    : await output.renderQr(response.shortUrl, expiry);
         } finally {
-            pending = false;
-            submit.disabled = false;
+            setPending(false);
         }
-        // Deliberately not awaited: a clipboard permission prompt must never keep the form disabled.
+        // Deliberately not awaited: a clipboard permission prompt must never keep the form pending.
         autoCopy?.();
     }
 
@@ -146,6 +99,14 @@ export function mountApp(root: Document): void {
         event.preventDefault();
         void handleSubmit();
     });
+}
+
+function createDots(root: Document): HTMLElement {
+    const dots = root.createElement('span');
+    dots.className = 'dots';
+    dots.setAttribute('aria-hidden', 'true');
+    dots.append(root.createElement('i'), root.createElement('i'), root.createElement('i'));
+    return dots;
 }
 
 async function requestShortUrl(url: string): Promise<ShortenResult> {

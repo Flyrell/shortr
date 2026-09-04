@@ -1,10 +1,15 @@
 import { expect, test } from '@playwright/test';
 import {
     COPIED_MESSAGE,
+    EXPIRY_PATTERN,
     errorAlert,
+    expiryLine,
     INVALID_URL_MESSAGE,
+    readClipboardText,
+    SHORT_CODE_PATTERN,
     SHORT_URL_PATTERN,
-    shortUrlButton,
+    shortCode,
+    shortLinkButton,
     TARGET_URL,
     TOAST_VISIBLE_CLASS,
     tab,
@@ -20,12 +25,14 @@ test('shortens a URL, copies it and redirects to the target', async ({ page, req
     await page.keyboard.type(TARGET_URL);
     await page.keyboard.press('Enter');
 
-    const result = shortUrlButton(page);
-    await expect(result).toHaveText(SHORT_URL_PATTERN);
+    const result = shortLinkButton(page);
+    await expect(result).toBeVisible();
+    await expect(shortCode(page)).toHaveText(SHORT_CODE_PATTERN);
+    await expect(expiryLine(page)).toHaveText(EXPIRY_PATTERN);
     await expect(toast(page)).toHaveText(COPIED_MESSAGE);
 
-    const shortUrl = await result.innerText();
-    expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(shortUrl);
+    const shortUrl = await readClipboardText(page);
+    expect(shortUrl).toMatch(SHORT_URL_PATTERN);
 
     const redirect = await request.get(shortUrl, { maxRedirects: 0 });
     expect(redirect.status()).toBe(302);
@@ -50,6 +57,6 @@ test('reports a rejected URL in an inline alert', async ({ page }) => {
     await urlInput(page).fill('not a url');
     await urlInput(page).press('Enter');
 
-    await expect(errorAlert(page)).toHaveText(INVALID_URL_MESSAGE);
-    await expect(shortUrlButton(page)).toHaveCount(0);
+    await expect(errorAlert(page)).toContainText(INVALID_URL_MESSAGE);
+    await expect(shortLinkButton(page)).toHaveCount(0);
 });

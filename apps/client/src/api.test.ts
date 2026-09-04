@@ -39,7 +39,11 @@ describe('postShorten', () => {
             jsonResponse(201, { code: 'abc1234', shortUrl: 'https://s.io/abc1234', expiresAt: '2026-10-04T00:00:00Z' }),
         );
 
-        expect(await postShorten('https://example.com')).toEqual({ kind: 'ok', shortUrl: 'https://s.io/abc1234' });
+        expect(await postShorten('https://example.com')).toEqual({
+            kind: 'ok',
+            shortUrl: 'https://s.io/abc1234',
+            expiresAt: '2026-10-04T00:00:00Z',
+        });
     });
 
     test('turns a malformed success body into an error', async () => {
