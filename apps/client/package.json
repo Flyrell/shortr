@@ -1,0 +1,25 @@
+{
+  "name": "@shortr/client",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.ts",
+    "dev": "node scripts/build.ts --watch",
+    "lint": "biome check . && tsc --noEmit",
+    "format": "biome format --write .",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "qrcode": "1.5.4"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.5.12",
+    "@types/node": "24.13.3",
+    "@types/qrcode": "1.5.6",
+    "esbuild": "0.28.2",
+    "happy-dom": "20.14.0",
+    "typescript": "6.0.3",
+    "vitest": "5.0.0"
+  }
+}

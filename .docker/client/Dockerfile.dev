@@ -1,0 +1,14 @@
+FROM node:24-alpine
+
+WORKDIR /app
+COPY apps/client/package.json apps/client/package-lock.json ./
+RUN npm ci && chown -R node:node /app
+
+# The anonymous volume keeps the image's lock-pinned, linux-built dependencies in
+# place when compose bind-mounts the host apps/client (with its own node_modules)
+# onto /app; without it the host tree would shadow them.
+VOLUME ["/app/node_modules"]
+
+USER node
+
+CMD ["npm", "run", "dev"]

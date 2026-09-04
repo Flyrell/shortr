@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="robots" content="noindex, nofollow" />
+        <title>shortr</title>
+        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <link rel="stylesheet" href="/assets/styles.css" />
+        <script type="module" src="/assets/main.js"></script>
+    </head>
+    <body>
+        <div class="app">
+            <header class="app__header">
+                <h1 class="app__title">shortr</h1>
+                <div class="tabs" id="tabs" role="tablist" aria-label="Mode">
+                    <button
+                        class="tab"
+                        type="button"
+                        role="tab"
+                        id="tab-shorten"
+                        data-value="shorten"
+                        aria-controls="panel"
+                        aria-selected="true"
+                        tabindex="0"
+                    >
+                        Shorten URL
+                    </button>
+                    <button
+                        class="tab"
+                        type="button"
+                        role="tab"
+                        id="tab-qr"
+                        data-value="qr"
+                        aria-controls="panel"
+                        aria-selected="false"
+                        tabindex="-1"
+                    >
+                        QR code
+                    </button>
+                </div>
+            </header>
+            <main>
+                <div class="panel" id="panel" role="tabpanel" aria-labelledby="tab-shorten">
+                    <form class="form" id="shorten-form" novalidate>
+                        <label class="form__label" id="url-label" for="url">URL to shorten</label>
+                        <input
+                            class="form__input"
+                            id="url"
+                            name="url"
+                            type="url"
+                            required
+                            autofocus
+                            autocomplete="off"
+                            spellcheck="false"
+                            placeholder="https://example.com/a-rather-long-link"
+                        />
+                        <button class="form__submit" id="submit" type="submit">Shorten</button>
+                    </form>
+                    <div class="result" id="result" role="region" aria-label="Result" aria-live="polite"></div>
+                </div>
+            </main>
+            <p class="toast" id="toast" role="status" aria-live="polite"></p>
+        </div>
+    </body>
+</html>
