@@ -19,6 +19,9 @@ node_modules/
 # Client build output
 apps/client/dist/
 
+# Playwright artifacts
+tests/test-results/
+
 # Local environment and overrides
 .env
 .env.*

@@ -1,20 +1,64 @@
 version: '3'
 
+vars:
+  # Its own project name and its own service instances, so running the suite
+  # never touches a development stack started from the same compose file.
+  E2E_COMPOSE: -p shortr-e2e -f docker-compose.yml -f .docker/compose.e2e.yml
+  GO_CACHE_VOLUME: shortr-go-cache
+  E2E_MODULES_VOLUME: shortr-e2e-modules
+  E2E_LINT_MODULES_VOLUME: shortr-e2e-lint-modules
+  NPM_CACHE_VOLUME: shortr-npm-cache
+  NODE_IMAGE: node:24-alpine
+
 includes:
   api:
     taskfile: apps/api/Taskfile.yml
     dir: apps/api
+  client:
+    taskfile: apps/client/Taskfile.yml
+    dir: apps/client
   local:
     taskfile: Taskfile.local.yml
     optional: true
 
 tasks:
+  project:start:
+    desc: Build and start the development stack (api, client watcher, redis).
+    cmds:
+      - docker volume create {{.GO_CACHE_VOLUME}}
+      # --renew-anon-volumes: the client node_modules volume must follow the rebuilt image.
+      - docker compose up -d --build --renew-anon-volumes
+
+  project:stop:
+    desc: Stop the development stack and drop its volumes.
+    cmds:
+      - docker compose down --volumes --remove-orphans
+
+  project:e2e:
+    desc: Run the Playwright end-to-end tests against the production image.
+    cmds:
+      - docker volume create {{.E2E_MODULES_VOLUME}}
+      - defer: docker compose {{.E2E_COMPOSE}} down --volumes --remove-orphans
+      - docker compose {{.E2E_COMPOSE}} up --build --abort-on-container-exit --exit-code-from e2e e2e
+
   project:lint:
     desc: Lint every application in the project.
-    cmds:
-      - task: api:lint
+    deps: [api:lint, client:lint, e2e:lint]
 
   project:test:
     desc: Run the unit tests of every application in the project.
+    deps: [api:test, client:test]
+
+  e2e:lint:
+    desc: Check formatting, lint rules and types of the end-to-end tests in Docker.
     cmds:
-      - task: api:test
+      # The repository root is mounted because tests/biome.json extends the root config.
+      # Its own node_modules volume: the playwright runner installs glibc binaries
+      # into {{.E2E_MODULES_VOLUME}} and this alpine image installs musl ones.
+      - >-
+        docker run --rm
+        -v {{.ROOT_DIR}}:/repo
+        -v {{.E2E_LINT_MODULES_VOLUME}}:/repo/tests/node_modules
+        -v {{.NPM_CACHE_VOLUME}}:/root/.npm
+        -w /repo/tests
+        {{.NODE_IMAGE}} sh -c "npm ci && npm run lint"

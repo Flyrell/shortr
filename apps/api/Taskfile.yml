@@ -16,13 +16,25 @@ vars:
     -e GOLANGCI_LINT_CACHE=/cache/lint
 
 tasks:
-  run:
-    desc: Run the API with the local Go toolchain against the built client.
-    dir: '{{.TASKFILE_DIR}}'
-    env:
-      STATIC_DIR: '{{.STATIC_DIR | default "../client/dist"}}'
+  start:
+    desc: Start the development stack (the API pulls in Redis and the client watcher).
+    dir: '{{.ROOT_DIR}}'
     cmds:
-      - go run .
+      - docker volume create {{.CACHE_VOLUME}}
+      # --renew-anon-volumes: the client node_modules volume must follow the rebuilt image.
+      - docker compose up -d --build --renew-anon-volumes api redis
+
+  stop:
+    desc: Stop the whole development stack and drop its volumes.
+    dir: '{{.ROOT_DIR}}'
+    cmds:
+      - docker compose down --volumes --remove-orphans
+
+  build:
+    desc: Build the production image shortr:latest.
+    dir: '{{.ROOT_DIR}}'
+    cmds:
+      - docker build -f .docker/Dockerfile -t shortr:latest .
 
   lint:
     desc: Lint the Go module with golangci-lint in Docker.

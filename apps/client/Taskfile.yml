@@ -4,16 +4,18 @@ vars:
   NODE_IMAGE: node:24-alpine
   MODULES_VOLUME: shortr-client-modules
   NPM_CACHE_VOLUME: shortr-npm-cache
-  # TASKFILE_DIR (not ROOT_DIR) so the mount resolves the same way whether this
-  # file runs standalone or as the "client" namespace included from the root.
-  # node_modules lives in a named volume so `npm ci` never wipes the host tree
-  # and never leaves linux binaries in it.
+  # Derived from TASKFILE_DIR (not ROOT_DIR) so the mounts resolve the same way
+  # whether this file runs standalone or as the "client" namespace included from
+  # the root. The whole repository is mounted because biome.json extends the root
+  # config. node_modules lives in a named volume so `npm ci` never wipes the host
+  # tree and never leaves linux binaries in it.
+  REPO_DIR: '{{dir (dir .TASKFILE_DIR)}}'
   DOCKER_RUN: >-
     docker run --rm
-    -v {{.TASKFILE_DIR}}:/app
-    -v {{.MODULES_VOLUME}}:/app/node_modules
+    -v {{.REPO_DIR}}:/repo
+    -v {{.MODULES_VOLUME}}:/repo/apps/client/node_modules
     -v {{.NPM_CACHE_VOLUME}}:/root/.npm
-    -w /app
+    -w /repo/apps/client
     {{.NODE_IMAGE}}
 
 tasks:

@@ -1,0 +1,12 @@
+version: '3'
+
+vars:
+  IMAGE: repository.zbinski.dev/shortr:latest
+
+tasks:
+  deploy:
+    desc: Build the production image for linux/amd64 and push it to the registry.
+    dir: '{{.ROOT_DIR}}'
+    cmds:
+      - docker build --platform linux/amd64 -t {{.IMAGE}} -f .docker/Dockerfile .
+      - docker push {{.IMAGE}}
