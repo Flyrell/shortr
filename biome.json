@@ -1,0 +1,143 @@
+{
+  "$schema": "https://biomejs.dev/schemas/2.5.12/schema.json",
+  "vcs": {
+    "enabled": false,
+    "clientKind": "git",
+    "useIgnoreFile": false
+  },
+  "formatter": {
+    "enabled": true,
+    "lineWidth": 120,
+    "indentStyle": "space",
+    "indentWidth": 4
+  },
+  "assist": {
+    "actions": {
+      "source": {
+        "organizeImports": "on"
+      }
+    }
+  },
+  "json": {
+    "formatter": {
+      "indentWidth": 2
+    }
+  },
+  "javascript": {
+    "formatter": {
+      "quoteStyle": "single",
+      "semicolons": "always",
+      "arrowParentheses": "always",
+      "trailingCommas": "all"
+    }
+  },
+  "overrides": [
+    {
+      "includes": [
+        "**/package.json"
+      ],
+      "formatter": {
+        "lineWidth": 1
+      }
+    }
+  ],
+  "linter": {
+    "enabled": true,
+    "rules": {
+      "preset": "recommended",
+      "performance": {
+        "noAccumulatingSpread": "warn",
+        "noDelete": "warn",
+        "noNamespaceImport": "error"
+      },
+      "complexity": {
+        "noStaticOnlyClass": "off",
+        "useOptionalChain": {
+          "level": "warn",
+          "fix": "safe"
+        },
+        "noUselessContinue": "warn",
+        "noArguments": "warn",
+        "noCommaOperator": "warn"
+      },
+      "correctness": {
+        "noUnusedImports": {
+          "level": "error",
+          "fix": "safe"
+        },
+        "noUnusedPrivateClassMembers": "off",
+        "noUnusedVariables": {
+          "level": "warn",
+          "options": {
+            "ignoreRestSiblings": true
+          }
+        },
+        "noUndeclaredVariables": "warn",
+        "noConstantCondition": "warn",
+        "noInnerDeclarations": "warn",
+        "noPrecisionLoss": "warn",
+        "noUnreachable": "warn",
+        "noUnsafeOptionalChaining": "warn",
+        "noVoidTypeReturn": "warn"
+      },
+      "style": {
+        "noNonNullAssertion": "error",
+        "useBlockStatements": "error",
+        "useExponentiationOperator": "off",
+        "useForOf": "warn",
+        "useNodejsImportProtocol": "error",
+        "noInferrableTypes": "warn",
+        "noParameterAssign": "warn",
+        "noUselessElse": "warn",
+        "useConst": "warn",
+        "useDefaultParameterLast": "warn",
+        "useEnumInitializers": "warn",
+        "useNumberNamespace": "warn",
+        "useSingleVarDeclarator": "warn",
+        "useShorthandFunctionType": "warn",
+        "useTemplate": "warn",
+        "useImportType": "off",
+        "useConsistentArrayType": {
+          "level": "error",
+          "options": {
+            "syntax": "shorthand"
+          }
+        }
+      },
+      "suspicious": {
+        "noConsole": {
+          "level": "error",
+          "options": {
+            "allow": [
+              "warn",
+              "error"
+            ]
+          }
+        },
+        "noConstEnum": "off",
+        "noExplicitAny": "error",
+        "noExportsInTest": "off",
+        "noThenProperty": "off",
+        "useAwait": "warn",
+        "noApproximativeNumericConstant": "warn",
+        "noAsyncPromiseExecutor": "warn",
+        "noAssignInExpressions": "warn",
+        "noConfusingVoidType": "warn",
+        "noControlCharactersInRegex": "warn",
+        "noDoubleEquals": "warn",
+        "noDuplicateTestHooks": "warn",
+        "noExtraNonNullAssertion": "warn",
+        "noFallthroughSwitchClause": "warn",
+        "noGlobalIsFinite": "warn",
+        "noGlobalIsNan": "warn",
+        "noImplicitAnyLet": "warn",
+        "noPrototypeBuiltins": "warn",
+        "noRedundantUseStrict": "warn",
+        "noRedeclare": "warn",
+        "noShadowRestrictedNames": "warn",
+        "useIsArray": "warn",
+        "noVar": "warn"
+      }
+    }
+  }
+}
