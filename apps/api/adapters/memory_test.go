@@ -17,10 +17,10 @@ func TestMemorySaveAndFindURL(t *testing.T) {
 	clock := newTestClock()
 	adapter := newMemoryAdapter(t, clock)
 
-	if err := adapter.SaveURL(ctx, "abc1234", "https://example.com", time.Hour); err != nil {
+	if err := adapter.SaveURL(ctx, "abc1234defgh", "https://example.com", time.Hour); err != nil {
 		t.Fatalf("SaveURL() error = %v", err)
 	}
-	got, err := adapter.FindURL(ctx, "abc1234")
+	got, err := adapter.FindURL(ctx, "abc1234defgh")
 	if err != nil {
 		t.Fatalf("FindURL() error = %v", err)
 	}
@@ -28,11 +28,11 @@ func TestMemorySaveAndFindURL(t *testing.T) {
 		t.Errorf("FindURL() = %q, want %q", got, want)
 	}
 
-	if err := adapter.SaveURL(ctx, "abc1234", "https://other.example", time.Hour); !errors.Is(err, ErrCodeTaken) {
+	if err := adapter.SaveURL(ctx, "abc1234defgh", "https://other.example", time.Hour); !errors.Is(err, ErrCodeTaken) {
 		t.Fatalf("SaveURL() error = %v, want ErrCodeTaken", err)
 	}
 	clock.Advance(2 * time.Hour)
-	if err := adapter.SaveURL(ctx, "abc1234", "https://other.example", time.Hour); err != nil {
+	if err := adapter.SaveURL(ctx, "abc1234defgh", "https://other.example", time.Hour); err != nil {
 		t.Fatalf("SaveURL() after expiry error = %v", err)
 	}
 }
@@ -47,8 +47,8 @@ func TestMemoryFindURLErrors(t *testing.T) {
 		advance time.Duration
 	}{
 		{name: "unknown code", code: "missing"},
-		{name: "expired code", code: "abc1234", save: true, advance: 2 * time.Hour},
-		{name: "expired exactly at boundary", code: "abc1234", save: true, advance: time.Hour},
+		{name: "expired code", code: "abc1234defgh", save: true, advance: 2 * time.Hour},
+		{name: "expired exactly at boundary", code: "abc1234defgh", save: true, advance: time.Hour},
 	}
 
 	for _, test := range tests {
@@ -98,7 +98,7 @@ func TestMemorySweepsExpiredEntriesOnItsTicker(t *testing.T) {
 			}
 		})
 
-		if err := adapter.SaveURL(ctx, "abc1234", "https://example.com", 30*time.Second); err != nil {
+		if err := adapter.SaveURL(ctx, "abc1234defgh", "https://example.com", 30*time.Second); err != nil {
 			t.Fatalf("SaveURL() error = %v", err)
 		}
 
@@ -141,4 +141,41 @@ func TestMemoryConcurrentAccess(t *testing.T) {
 		}()
 	}
 	group.Wait()
+}
+
+var baseTime = time.Date(2026, time.September, 4, 12, 0, 0, 0, time.UTC)
+
+type testClock struct {
+	mu  sync.Mutex
+	now time.Time
+}
+
+func newTestClock() *testClock {
+	return &testClock{now: baseTime}
+}
+
+func (c *testClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	return c.now
+}
+
+func (c *testClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	c.now = c.now.Add(d)
+}
+
+func newMemoryAdapter(t *testing.T, clock *testClock) *Memory {
+	t.Helper()
+
+	adapter := newMemory(clock.Now)
+	t.Cleanup(func() {
+		if err := adapter.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+	return adapter
 }

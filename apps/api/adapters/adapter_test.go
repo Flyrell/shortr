@@ -79,7 +79,7 @@ func TestAdapterRejectsNonPositiveTTL(t *testing.T) {
 	for name, adapter := range contractAdapters(t) {
 		for ttlName, ttl := range ttls {
 			t.Run(name+" "+ttlName, func(t *testing.T) {
-				if err := adapter.SaveURL(t.Context(), "abc1234", "https://example.com", ttl); !errors.Is(err, errInvalidTTL) {
+				if err := adapter.SaveURL(t.Context(), "abc1234defgh", "https://example.com", ttl); !errors.Is(err, errInvalidTTL) {
 					t.Errorf("SaveURL() error = %v, want errInvalidTTL", err)
 				}
 			})
@@ -104,4 +104,17 @@ func TestAdapterRejectsUseAfterClose(t *testing.T) {
 			}
 		})
 	}
+}
+
+func contractAdapters(t *testing.T) map[string]Adapter {
+	t.Helper()
+
+	memory := NewMemory()
+	t.Cleanup(func() {
+		if err := memory.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+	redis, _ := newRedisAdapter(t)
+	return map[string]Adapter{"memory": memory, "redis": redis}
 }

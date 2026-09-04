@@ -1,10 +1,6 @@
 package config
 
-import (
-	"errors"
-	"strings"
-	"testing"
-)
+import "testing"
 
 func lookupFrom(values map[string]string) Lookup {
 	return func(key string) (string, bool) {
@@ -21,19 +17,4 @@ func withStaticDir(t *testing.T, values map[string]string) map[string]string {
 		merged[key] = value
 	}
 	return merged
-}
-
-func assertVarError(t *testing.T, err error, variable string) {
-	t.Helper()
-
-	var varErr *varError
-	if !errors.As(err, &varErr) {
-		t.Fatalf("Load() error = %v, want *varError", err)
-	}
-	if varErr.Variable != variable {
-		t.Errorf("Variable = %q, want %q", varErr.Variable, variable)
-	}
-	if !strings.Contains(varErr.Error(), variable) {
-		t.Errorf("Error() = %q, want it to name %q", varErr.Error(), variable)
-	}
 }

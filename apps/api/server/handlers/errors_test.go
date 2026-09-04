@@ -70,7 +70,7 @@ func TestErrorHandler(t *testing.T) {
 	}
 }
 
-func TestErrorHandlerMapsEveryFiberStatus(t *testing.T) {
+func TestErrorHandlerReachesEveryMappedStatus(t *testing.T) {
 	t.Parallel()
 
 	for status, mapped := range statusErrors {

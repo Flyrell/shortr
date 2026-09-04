@@ -94,17 +94,17 @@ func TestNewRedisUsesCredentialsAndDatabase(t *testing.T) {
 				}
 			})
 
-			if err = adapter.SaveURL(t.Context(), "abc1234", "https://example.com", time.Hour); err != nil {
+			if err = adapter.SaveURL(t.Context(), "abc1234defgh", "https://example.com", time.Hour); err != nil {
 				t.Fatalf("SaveURL() error = %v", err)
 			}
-			got, err := server.DB(test.want).Get(urlPrefix + "abc1234")
+			got, err := server.DB(test.want).Get(urlPrefix + "abc1234defgh")
 			if err != nil {
 				t.Fatalf("DB(%d).Get() error = %v", test.want, err)
 			}
 			if want := "https://example.com"; got != want {
 				t.Errorf("DB(%d).Get() = %q, want %q", test.want, got, want)
 			}
-			if test.want != 0 && server.DB(0).Exists(urlPrefix+"abc1234") {
+			if test.want != 0 && server.DB(0).Exists(urlPrefix+"abc1234defgh") {
 				t.Errorf("SaveURL() also wrote to database 0, want only %d", test.want)
 			}
 			for _, rendering := range []string{fmt.Sprintf("%v", adapter), fmt.Sprintf("%+v", adapter), fmt.Sprintf("%#v", adapter)} {
@@ -122,16 +122,16 @@ func TestRedisSaveAndFindURL(t *testing.T) {
 	ctx := t.Context()
 	adapter, server := newRedisAdapter(t)
 
-	if err := adapter.SaveURL(ctx, "abc1234", "https://example.com", time.Minute); err != nil {
+	if err := adapter.SaveURL(ctx, "abc1234defgh", "https://example.com", time.Minute); err != nil {
 		t.Fatalf("SaveURL() error = %v", err)
 	}
-	if !server.Exists(urlPrefix + "abc1234") {
+	if !server.Exists(urlPrefix + "abc1234defgh") {
 		t.Errorf("SaveURL() did not write the %s prefixed key", urlPrefix)
 	}
-	if got, want := server.TTL(urlPrefix+"abc1234"), time.Minute; got != want {
+	if got, want := server.TTL(urlPrefix+"abc1234defgh"), time.Minute; got != want {
 		t.Errorf("TTL = %v, want %v", got, want)
 	}
-	got, err := adapter.FindURL(ctx, "abc1234")
+	got, err := adapter.FindURL(ctx, "abc1234defgh")
 	if err != nil {
 		t.Fatalf("FindURL() error = %v", err)
 	}
@@ -139,7 +139,7 @@ func TestRedisSaveAndFindURL(t *testing.T) {
 		t.Errorf("FindURL() = %q, want %q", got, want)
 	}
 
-	if err := adapter.SaveURL(ctx, "abc1234", "https://other.example", time.Minute); !errors.Is(err, ErrCodeTaken) {
+	if err := adapter.SaveURL(ctx, "abc1234defgh", "https://other.example", time.Minute); !errors.Is(err, ErrCodeTaken) {
 		t.Fatalf("SaveURL() error = %v, want ErrCodeTaken", err)
 	}
 }
@@ -153,12 +153,12 @@ func TestRedisFindURLErrors(t *testing.T) {
 	if _, err := adapter.FindURL(ctx, "missing"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("FindURL() unknown code error = %v, want ErrNotFound", err)
 	}
-	if err := adapter.SaveURL(ctx, "abc1234", "https://example.com", time.Minute); err != nil {
+	if err := adapter.SaveURL(ctx, "abc1234defgh", "https://example.com", time.Minute); err != nil {
 		t.Fatalf("SaveURL() error = %v", err)
 	}
 	server.FastForward(2 * time.Minute)
 
-	if _, err := adapter.FindURL(ctx, "abc1234"); !errors.Is(err, ErrNotFound) {
+	if _, err := adapter.FindURL(ctx, "abc1234defgh"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("FindURL() expired code error = %v, want ErrNotFound", err)
 	}
 }

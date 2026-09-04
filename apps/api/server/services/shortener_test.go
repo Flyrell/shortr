@@ -1,6 +1,7 @@
 package services
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"testing"
@@ -30,10 +31,17 @@ func TestShortenerShorten(t *testing.T) {
 	if len(store.saves) != 1 || store.saves[0] != want {
 		t.Errorf("SaveURL calls = %+v, want [%+v]", store.saves, want)
 	}
+}
 
-	live, err := NewShortener(&stubStore{}, "https://sho.rt", time.Hour).Shorten(t.Context(), "https://example.com")
-	if err != nil || !live.ExpiresAt.After(time.Now()) {
-		t.Errorf("Shorten() = %v, %v, want an expiry measured from the wall clock", live.ExpiresAt, err)
+func TestNewShortenerMeasuresExpiryFromTheWallClock(t *testing.T) {
+	t.Parallel()
+
+	got, err := NewShortener(&stubStore{}, "https://sho.rt", time.Hour).Shorten(t.Context(), "https://example.com")
+	if err != nil {
+		t.Fatalf("Shorten() error = %v", err)
+	}
+	if !got.ExpiresAt.After(time.Now()) {
+		t.Errorf("ExpiresAt = %v, want a time still in the future", got.ExpiresAt)
 	}
 }
 
@@ -107,11 +115,11 @@ func TestShortenerResolve(t *testing.T) {
 		wantFindCalls int
 	}{
 		{name: "known code", code: knownCode, store: &stubStore{target: "https://example.com/page"}, want: "https://example.com/page", wantFindCalls: 1},
-		{name: "code that is too short", code: "nope", store: &stubStore{findErr: adapters.ErrNotFound}, wantErr: ErrNotFound},
-		{name: "code that is too long", code: "abc1234567890", store: &stubStore{findErr: adapters.ErrNotFound}, wantErr: ErrNotFound},
-		{name: "code with a slash", code: "abc/12345678", store: &stubStore{findErr: adapters.ErrNotFound}, wantErr: ErrNotFound},
-		{name: "code with a non ascii letter", code: "abc1234567é", store: &stubStore{findErr: adapters.ErrNotFound}, wantErr: ErrNotFound},
-		{name: "empty code", code: "", store: &stubStore{findErr: adapters.ErrNotFound}, wantErr: ErrNotFound},
+		{name: "code that is too short", code: "nope", store: &stubStore{}, wantErr: ErrNotFound},
+		{name: "code that is too long", code: "abc1234567890", store: &stubStore{}, wantErr: ErrNotFound},
+		{name: "code with a slash", code: "abc/12345678", store: &stubStore{}, wantErr: ErrNotFound},
+		{name: "code with a non ascii letter", code: "abc1234567é", store: &stubStore{}, wantErr: ErrNotFound},
+		{name: "empty code", code: "", store: &stubStore{}, wantErr: ErrNotFound},
 		{name: "unknown code", code: knownCode, store: &stubStore{findErr: adapters.ErrNotFound}, wantErr: ErrNotFound, wantFindCalls: 1},
 		{name: "store failure", code: knownCode, store: &stubStore{findErr: backendErr}, wantErr: backendErr, wantPrefix: "shortener: resolve ", wantFindCalls: 1},
 	}
@@ -195,4 +203,40 @@ func TestGenerateCode(t *testing.T) {
 		t.Errorf("generateCode() produced %d of %d unique codes using %d of %d alphabet characters",
 			len(codes), samples, len(characters), len(codeAlphabet))
 	}
+}
+
+const knownCode = "abc1234defgh"
+
+var shortenerTime = time.Date(2026, time.September, 4, 12, 0, 0, 0, time.UTC)
+
+type saveCall struct {
+	code   string
+	target string
+	ttl    time.Duration
+}
+
+type stubStore struct {
+	takenSaves int
+	saveErr    error
+	target     string
+	findErr    error
+	saves      []saveCall
+	findCalls  int
+}
+
+func (s *stubStore) SaveURL(_ context.Context, code, target string, ttl time.Duration) error {
+	s.saves = append(s.saves, saveCall{code: code, target: target, ttl: ttl})
+	if len(s.saves) <= s.takenSaves {
+		return adapters.ErrCodeTaken
+	}
+	return s.saveErr
+}
+
+func (s *stubStore) FindURL(_ context.Context, _ string) (string, error) {
+	s.findCalls++
+	return s.target, s.findErr
+}
+
+func newTestShortener(store urlStore) *Shortener {
+	return newShortener(store, "https://sho.rt", 24*time.Hour, func() time.Time { return shortenerTime })
 }

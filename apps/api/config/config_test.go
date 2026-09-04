@@ -189,3 +189,18 @@ func TestLoadKeepsTheUnderlyingCause(t *testing.T) {
 		t.Errorf("Error() = %q, want it to name STATIC_DIR", err)
 	}
 }
+
+func assertVarError(t *testing.T, err error, variable string) {
+	t.Helper()
+
+	var varErr *varError
+	if !errors.As(err, &varErr) {
+		t.Fatalf("Load() error = %v, want *varError", err)
+	}
+	if varErr.Variable != variable {
+		t.Errorf("Variable = %q, want %q", varErr.Variable, variable)
+	}
+	if !strings.Contains(varErr.Error(), variable) {
+		t.Errorf("Error() = %q, want it to name %q", varErr.Error(), variable)
+	}
+}

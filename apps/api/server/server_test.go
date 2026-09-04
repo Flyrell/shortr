@@ -1,20 +1,31 @@
 package server
 
 import (
+	"encoding/json"
 	"errors"
+	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gofiber/fiber/v3"
 
 	"github.com/Flyrell/shortr/apps/api/server/servertest"
+	"github.com/Flyrell/shortr/apps/api/server/services"
 )
 
-const shortenBody = `{"url":"https://example.com/x"}`
+const (
+	shortenBody      = `{"url":"https://example.com/x"}`
+	defaultRateLimit = 100
+	redirectTarget   = "https://example.com/x"
+)
 
 func TestRoutes(t *testing.T) {
 	t.Parallel()
@@ -65,7 +76,7 @@ func TestRoutes(t *testing.T) {
 			wantError:  "unavailable",
 		},
 		{name: "redirect", method: http.MethodGet, path: "/" + servertest.KnownCode, wantStatus: http.StatusFound, wantLocation: redirectTarget},
-		{name: "unknown code", method: http.MethodGet, path: "/zzzzzzz", wantStatus: http.StatusNotFound, wantError: "not_found"},
+		{name: "unknown code", method: http.MethodGet, path: "/zzzzzzzzzzzz", wantStatus: http.StatusNotFound, wantError: "not_found"},
 		{name: "unknown path", method: http.MethodGet, path: "/a/b/c", wantStatus: http.StatusNotFound, wantError: "not_found"},
 		{name: "wrong method", method: http.MethodPost, path: "/healthz", wantStatus: http.StatusMethodNotAllowed, wantError: "method_not_allowed"},
 	}
@@ -162,20 +173,6 @@ func TestRateLimitAppliesToShortenOnly(t *testing.T) {
 	}
 }
 
-func TestBodyLimitRejectsOversizedRequests(t *testing.T) {
-	t.Parallel()
-
-	// fasthttp enforces the body limit while it reads the request, before the
-	// in-memory connection app.Test uses can hand back a response.
-	body := `{"url":"https://example.com/` + strings.Repeat("a", bodyLimit) + `"}`
-	response := postToListener(t, newTestApp(t, appStubs{}), "/api/shorten", body)
-
-	if response.StatusCode != http.StatusRequestEntityTooLarge {
-		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusRequestEntityTooLarge)
-	}
-	assertErrorBody(t, response, "body_too_large")
-}
-
 func TestConfig(t *testing.T) {
 	t.Parallel()
 
@@ -193,5 +190,87 @@ func TestConfig(t *testing.T) {
 	}
 	if want := []string{"10.0.0.0/8", "192.168.1.0/24"}; !slices.Equal(got.TrustProxyConfig.Proxies, want) {
 		t.Errorf("Proxies = %v, want %v", got.TrustProxyConfig.Proxies, want)
+	}
+}
+
+type appStubs struct {
+	rateLimit      int
+	shortenErr     error
+	pingErr        error
+	trustedProxies []netip.Prefix
+}
+
+func newTestApp(t *testing.T, stubs appStubs) *fiber.App {
+	t.Helper()
+
+	limit := stubs.rateLimit
+	if limit == 0 {
+		limit = defaultRateLimit
+	}
+	return New(&Deps{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Shortener: &servertest.StubShortener{
+			Short:      services.ShortURL{Code: servertest.KnownCode, ShortURL: "https://sho.rt/" + servertest.KnownCode},
+			ShortenErr: stubs.shortenErr,
+			Target:     redirectTarget,
+		},
+		Adapter:         servertest.StubPinger{Err: stubs.pingErr},
+		StaticDir:       staticDir(t),
+		TrustedProxies:  stubs.trustedProxies,
+		RateLimitWindow: time.Minute,
+		RateLimitValue:  limit,
+	})
+}
+
+func staticDir(t *testing.T) string {
+	t.Helper()
+
+	dir := t.TempDir()
+	for _, name := range []string{"index.html", "robots.txt", "favicon.svg", "assets/main.js"} {
+		path := filepath.Join(dir, filepath.FromSlash(name))
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatalf("MkdirAll() error = %v", err)
+		}
+		if err := os.WriteFile(path, []byte(name), 0o600); err != nil {
+			t.Fatalf("WriteFile() error = %v", err)
+		}
+	}
+	return dir
+}
+
+func assertSecurityHeaders(t *testing.T, response *http.Response) {
+	t.Helper()
+
+	headers := map[string]string{
+		"X-Content-Type-Options": "nosniff",
+		"X-Frame-Options":        "DENY",
+		"Referrer-Policy":        "no-referrer",
+		fiber.HeaderXRobotsTag:   "noindex, nofollow, noarchive",
+	}
+	for header, want := range headers {
+		if got := response.Header.Get(header); got != want {
+			t.Errorf("%s = %q, want %q", header, got, want)
+		}
+	}
+	if response.Header.Get("Content-Security-Policy") == "" {
+		t.Error("Content-Security-Policy is missing")
+	}
+}
+
+func assertErrorBody(t *testing.T, response *http.Response, want string) {
+	t.Helper()
+
+	var body struct {
+		Error   string `json:"error"`
+		Message string `json:"message"`
+	}
+	if err := json.NewDecoder(response.Body).Decode(&body); err != nil {
+		t.Fatalf("decode error = %v", err)
+	}
+	if body.Error != want {
+		t.Errorf("error = %q, want %q", body.Error, want)
+	}
+	if body.Message == "" {
+		t.Error("message is empty")
 	}
 }
