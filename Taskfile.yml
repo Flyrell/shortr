@@ -1,0 +1,20 @@
+version: '3'
+
+includes:
+  api:
+    taskfile: apps/api/Taskfile.yml
+    dir: apps/api
+  local:
+    taskfile: Taskfile.local.yml
+    optional: true
+
+tasks:
+  project:lint:
+    desc: Lint every application in the project.
+    cmds:
+      - task: api:lint
+
+  project:test:
+    desc: Run the unit tests of every application in the project.
+    cmds:
+      - task: api:test
