@@ -1,0 +1,35 @@
+version: '3'
+
+vars:
+  # The brief names golang:1.27-alpine, but `go test -race` needs cgo and the
+  # alpine image ships no C toolchain, so the Debian based image is used here.
+  GO_IMAGE: golang:1.27
+  LINT_IMAGE: golangci/golangci-lint:v2.13.2
+  CACHE_VOLUME: shortr-go-cache
+  DOCKER_RUN: >-
+    docker run --rm
+    -v {{.CACHE_VOLUME}}:/cache
+    -v {{.TASKFILE_DIR}}:/app
+    -w /app
+    -e GOMODCACHE=/cache/mod
+    -e GOCACHE=/cache/build
+    -e GOLANGCI_LINT_CACHE=/cache/lint
+
+tasks:
+  run:
+    desc: Run the API with the local Go toolchain against the built client.
+    dir: '{{.TASKFILE_DIR}}'
+    env:
+      STATIC_DIR: '{{.STATIC_DIR | default "../client/dist"}}'
+    cmds:
+      - go run .
+
+  lint:
+    desc: Lint the Go module with golangci-lint in Docker.
+    cmds:
+      - "{{.DOCKER_RUN}} {{.LINT_IMAGE}} golangci-lint run"
+
+  test:
+    desc: Run the Go unit tests with the race detector in Docker.
+    cmds:
+      - "{{.DOCKER_RUN}} {{.GO_IMAGE}} go test -race -count=1 ./..."
