@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    name: Lint, test, build, e2e
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v7
+
+      - name: Install Task
+        uses: arduino/setup-task@v3
+        with:
+          version: 3.x
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Lint
+        run: task project:lint
+
+      - name: Unit tests
+        run: task project:test
+
+      - name: Build the production image
+        run: task api:build
+
+      - name: End-to-end tests
+        run: task project:e2e
