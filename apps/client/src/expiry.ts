@@ -29,10 +29,11 @@ export function describeExpiry(expiresAt: string, now: Date): Expiry | null {
 
 function toRelative(remainingMs: number): string {
     for (const unit of UNITS) {
-        const count = Math.floor(remainingMs / unit.ms);
-        if (count >= 1) {
-            return `in ${count} ${unit.name}${count === 1 ? '' : 's'}`;
+        if (Math.floor(remainingMs / unit.ms) < 1) {
+            continue;
         }
+        const count = Math.round(remainingMs / unit.ms);
+        return `in ${count} ${unit.name}${count === 1 ? '' : 's'}`;
     }
     return SUB_MINUTE;
 }

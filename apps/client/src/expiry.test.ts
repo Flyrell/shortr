@@ -10,10 +10,13 @@ function relative(expiresAt: string): string | undefined {
 describe('describeExpiry', () => {
     test.each([
         ['2026-10-04T12:00:00Z', 'in 30 days'],
+        ['2026-10-04T11:59:55Z', 'in 30 days'],
+        ['2026-09-05T21:36:00Z', 'in 1 day'],
         ['2026-09-05T12:00:00Z', 'in 1 day'],
-        ['2026-09-05T11:59:00Z', 'in 23 hours'],
+        ['2026-09-05T11:54:00Z', 'in 24 hours'],
         ['2026-09-04T13:00:00Z', 'in 1 hour'],
-        ['2026-09-04T12:45:00Z', 'in 45 minutes'],
+        ['2026-09-04T12:40:00Z', 'in 40 minutes'],
+        ['2026-09-04T12:01:30Z', 'in 2 minutes'],
         ['2026-09-04T12:01:00Z', 'in 1 minute'],
     ])('reports %s as %s', (expiresAt, expected) => {
         expect(relative(expiresAt)).toBe(expected);
