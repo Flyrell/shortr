@@ -1,0 +1,322 @@
+<!doctype html>
+<!-- Landing page for GitHub Pages. Maintained by hand alongside README.md, which is the
+     authoritative source for the numbers and behaviour repeated here; update both together. -->
+<html lang="en">
+    <head>
+        <meta charset="utf-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="robots" content="index, follow" />
+        <title>shortr — URL shortener and QR code generator</title>
+        <meta
+            name="description"
+            content="shortr is a self-hosted URL shortener and QR code generator. A Go 1.27 API on Fiber v3 serves the API, the redirects and a plain TypeScript client from a single Docker image."
+        />
+        <link rel="stylesheet" href="styles.css" />
+    </head>
+    <body>
+        <a class="skip" href="#main">Skip to content</a>
+
+        <header class="hero">
+            <div class="wrap">
+                <p class="eyebrow">Self-hosted · single image</p>
+                <h1 class="wordmark">shortr</h1>
+                <p class="tagline">
+                    Long links in, short links out. Every link expires. Nothing to sign up for.
+                </p>
+                <p class="lede">
+                    A URL shortener and QR code generator. A Go&nbsp;1.27 API built on Fiber&nbsp;v3 serves the
+                    JSON endpoints, the redirects and a plain TypeScript client from the same binary — one
+                    Docker image, no accounts, no tracking.
+                </p>
+                <p class="actions">
+                    <a class="button" href="https://github.com/Flyrell/shortr">View on GitHub</a>
+                    <a class="button button--ghost" href="#quick-start">Quick start</a>
+                </p>
+            </div>
+        </header>
+
+        <nav class="toc" aria-label="Sections">
+            <div class="wrap">
+                <ul>
+                    <li><a href="#quick-start">Quick start</a></li>
+                    <li><a href="#configuration">Configuration</a></li>
+                    <li><a href="#api">API</a></li>
+                    <li><a href="#client">Client</a></li>
+                    <li><a href="#development">Development</a></li>
+                    <li><a href="#adapters">Adapters</a></li>
+                    <li><a href="#security">Security</a></li>
+                </ul>
+            </div>
+        </nav>
+
+        <main id="main" class="wrap">
+            <section id="quick-start" class="section">
+                <h2>Quick start</h2>
+                <div class="cards">
+                    <article class="card">
+                        <h3>docker run</h3>
+                        <p>
+                            Build the production image and run it. With no <code>URL_PERSISTER</code> set, links
+                            are kept in memory and nothing else is needed.
+                        </p>
+                        <pre><code>docker build -f .docker/Dockerfile -t shortr:latest .
+docker run --rm -p 8080:8080 shortr:latest</code></pre>
+                        <p class="note">
+                            Serving from another origin? Add
+                            <code>-e BASE_URL=https://s.example.com</code> so the returned links point at it.
+                        </p>
+                    </article>
+                    <article class="card">
+                        <h3>docker compose</h3>
+                        <p>
+                            The development stack runs the API with hot reload, the client watcher and Redis,
+                            driven by <a href="https://taskfile.dev">Task</a>.
+                        </p>
+                        <pre><code>cp .env.example .env
+task project:start
+task project:stop</code></pre>
+                        <p class="note">
+                            Both land on <code>http://localhost:8080</code>. <code>project:stop</code> drops the
+                            stack's volumes.
+                        </p>
+                    </article>
+                </div>
+            </section>
+
+            <section id="configuration" class="section">
+                <h2>Configuration</h2>
+                <p>
+                    Everything is read from the environment at startup; an invalid value aborts the start with an
+                    error naming the variable.
+                </p>
+                <div class="table-scroll">
+                    <table>
+                        <caption>Core variables</caption>
+                        <thead>
+                            <tr><th scope="col">Variable</th><th scope="col">Default</th><th scope="col">Rules</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><th scope="row"><code>PORT</code></th><td><code>8080</code></td><td>Integer between 1 and 65535.</td></tr>
+                            <tr><th scope="row"><code>BASE_URL</code></th><td><code>http://localhost:8080</code></td><td>Public origin used to build short links. http or https scheme with a host; trailing slashes stripped.</td></tr>
+                            <tr><th scope="row"><code>STATIC_DIR</code></th><td><code>./apps/client/dist</code></td><td>Directory holding the built client. Must exist at startup.</td></tr>
+                            <tr><th scope="row"><code>URL_TTL</code></th><td><code>30d</code></td><td>Link lifetime. Go duration syntax plus an <code>Nd</code> day suffix. Greater than zero.</td></tr>
+                            <tr><th scope="row"><code>URL_PERSISTER</code></th><td><code>memory</code></td><td>Storage adapter: <code>memory</code> or <code>redis</code>.</td></tr>
+                            <tr><th scope="row"><code>RATE_LIMIT_MODE</code></th><td><code>day</code></td><td><code>second</code>, <code>minute</code>, <code>hour</code> or <code>day</code>.</td></tr>
+                            <tr><th scope="row"><code>RATE_LIMIT_VALUE</code></th><td><code>30</code></td><td>Requests per window per client IP. At least 1.</td></tr>
+                            <tr><th scope="row"><code>TRUSTED_PROXIES</code></th><td><em>empty</em></td><td>Comma separated CIDR blocks. Empty means <code>X-Forwarded-For</code> is ignored.</td></tr>
+                            <tr><th scope="row"><code>LOG_LEVEL</code></th><td><code>info</code></td><td><code>debug</code>, <code>info</code>, <code>warn</code> or <code>error</code>. JSON logs on stdout.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="table-scroll">
+                    <table>
+                        <caption>Adapter: <code>redis</code> — read and validated by the adapter itself</caption>
+                        <thead>
+                            <tr><th scope="col">Variable</th><th scope="col">Default</th><th scope="col">Rules</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><th scope="row"><code>REDIS_HOST</code></th><td><em>required</em></td><td>Non-empty host name.</td></tr>
+                            <tr><th scope="row"><code>REDIS_PORT</code></th><td><em>required</em></td><td>Integer between 1 and 65535.</td></tr>
+                            <tr><th scope="row"><code>REDIS_USER</code></th><td><em>required</em></td><td>Non-empty user name.</td></tr>
+                            <tr><th scope="row"><code>REDIS_PASSWORD</code></th><td><em>required</em></td><td>Non-empty. Kept untrimmed, never logged.</td></tr>
+                            <tr><th scope="row"><code>REDIS_DB</code></th><td><code>0</code></td><td>Integer of at least 0.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="note">
+                    Keys are stored as <code>url:&lt;code&gt;</code> with <code>SET NX EX</code>, so Redis
+                    handles expiry.
+                </p>
+            </section>
+
+            <section id="api" class="section">
+                <h2>API</h2>
+                <div class="routes">
+                    <article class="route">
+                        <p class="route__line"><span class="verb verb--post">POST</span> <code>/api/shorten</code></p>
+                        <p>
+                            Requires <code>Content-Type: application/json</code>. Rate limited and bot filtered.
+                            Answers <code>201</code> with the code, the short URL and an RFC 3339
+                            <code>expiresAt</code>.
+                        </p>
+                        <pre><code>curl -X POST http://localhost:8080/api/shorten \
+  -H 'Content-Type: application/json' \
+  -d '{"url":"https://example.com/a-rather-long-link"}'</code></pre>
+                        <pre><code>{
+  "code": "aB3xY7kQ1mZp",
+  "shortUrl": "http://localhost:8080/aB3xY7kQ1mZp",
+  "expiresAt": "2026-10-05T12:00:00Z"
+}</code></pre>
+                        <p class="note">
+                            Errors share one shape,
+                            <code>{"error": "invalid_url", "message": "…"}</code>:
+                            <code>400 invalid_body</code>, <code>400 invalid_url</code>,
+                            <code>403 forbidden</code>, <code>413 body_too_large</code>,
+                            <code>415 unsupported_media_type</code>, <code>429 rate_limited</code>,
+                            <code>500 internal</code>.
+                        </p>
+                    </article>
+                    <article class="route">
+                        <p class="route__line"><span class="verb">GET</span> <code>/{code}</code></p>
+                        <p>
+                            <code>302 Found</code> to the target with <code>Cache-Control: no-store</code>.
+                            Neither rate limited nor bot filtered. <code>404 not_found</code> when the code is
+                            unknown, expired, or not 12 characters of <code>[0-9A-Za-z]</code>.
+                        </p>
+                    </article>
+                    <article class="route">
+                        <p class="route__line"><span class="verb">GET</span> <code>/healthz</code></p>
+                        <p>
+                            <code>200 {"status":"ok"}</code> when the adapter answers a ping,
+                            <code>503 unavailable</code> when it does not. Not bot filtered, so probes with any
+                            user agent work.
+                        </p>
+                    </article>
+                    <article class="route">
+                        <p class="route__line"><span class="verb">GET</span> <code>/</code>, <code>/robots.txt</code>, <code>/favicon.svg</code>, <code>/assets/*</code></p>
+                        <p>
+                            The built client, served from <code>STATIC_DIR</code>; assets carry a one hour
+                            <code>max-age</code>. All bot filtered.
+                        </p>
+                    </article>
+                </div>
+            </section>
+
+            <section id="client" class="section">
+                <h2>Client</h2>
+                <p>
+                    Plain HTML, CSS and TypeScript bundled by esbuild and served by the API. No external requests
+                    at runtime.
+                </p>
+                <ul class="list">
+                    <li>
+                        <strong>Two modes</strong> — <em>Shorten URL</em> and <em>QR code</em> as a tablist. The
+                        choice is stored in <code>localStorage</code> under <code>shortr.mode</code>; the default
+                        is <em>Shorten URL</em>.
+                    </li>
+                    <li>
+                        <strong>Keyboard</strong> — roving tabindex on the tabs: Left and Right move, Home and
+                        End jump to the ends. The URL input is focused on load and Enter submits.
+                    </li>
+                    <li>
+                        <strong>Clipboard</strong> — the result is copied automatically, the short URL as text or
+                        the QR code as a PNG through <code>ClipboardItem</code>, with a toast in an
+                        <code>aria-live</code> region. Clicking the result copies again; when the clipboard is
+                        unavailable the toast says so instead.
+                    </li>
+                    <li>
+                        <strong>Expiry</strong> — directly under the short code the result card shows when the
+                        link dies, built from the <code>expiresAt</code> of the response: the largest whole unit
+                        left and the date, for example <em>Expires in 30 days &middot; 4 Oct 2026</em>.
+                    </li>
+                    <li>
+                        <strong>Errors</strong> render inline with <code>role="alert"</code>; a 429 adds the
+                        seconds to wait, read from <code>Retry-After</code>.
+                    </li>
+                </ul>
+            </section>
+
+            <section id="development" class="section">
+                <h2>Development</h2>
+                <p>
+                    Everything runs in Docker — no Go or Node toolchain on the host, only Docker and Task. The
+                    API container rebuilds on every Go change with air; the client container runs the esbuild
+                    watcher and the API serves its output.
+                </p>
+                <div class="table-scroll">
+                    <table>
+                        <caption>Tasks</caption>
+                        <thead>
+                            <tr><th scope="col">Task</th><th scope="col">What it does</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr><th scope="row"><code>task project:start</code></th><td>Build and start the development stack.</td></tr>
+                            <tr><th scope="row"><code>task project:stop</code></th><td>Stop it and drop its volumes.</td></tr>
+                            <tr><th scope="row"><code>task project:lint</code></th><td>Lint the API, the client and the e2e suite.</td></tr>
+                            <tr><th scope="row"><code>task project:test</code></th><td>Run the API and client unit tests.</td></tr>
+                            <tr><th scope="row"><code>task project:e2e</code></th><td>Playwright suite against the production image.</td></tr>
+                            <tr><th scope="row"><code>task api:build</code></th><td>Build the production image <code>shortr:latest</code>.</td></tr>
+                            <tr><th scope="row"><code>task client:build</code></th><td>Bundle the client into <code>apps/client/dist</code>.</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+                <p class="note">
+                    The production image is distroless and runs as <code>nonroot</code>: the static binary plus
+                    the built client in <code>/srv/client</code>, nothing else. With no shell inside, health
+                    probes go through <code>GET /healthz</code>.
+                </p>
+            </section>
+
+            <section id="adapters" class="section">
+                <h2>Writing an adapter</h2>
+                <p>
+                    Storage lives behind one interface. Adding a backend touches
+                    <code>adapters/&lt;name&gt;.go</code>, its test and a single case in
+                    <code>adapters.New</code> — nothing else in the codebase learns about it.
+                </p>
+                <pre><code>type Env func(key string) (string, bool)
+
+type Adapter interface {
+    SaveURL(ctx context.Context, code, target string, ttl time.Duration) error
+    FindURL(ctx context.Context, code string) (string, error)
+    Ping(ctx context.Context) error
+    Close() error
+}</code></pre>
+                <p>
+                    Implement the four methods — <code>ErrCodeTaken</code> when the code exists,
+                    <code>ErrNotFound</code> when it is missing or expired — read and validate your own
+                    environment variables from the <code>Env</code> lookup the constructor receives, register one
+                    case in <code>adapters.New</code>, and add tests. Rate limiting, code generation and URL
+                    validation are not adapter concerns.
+                </p>
+            </section>
+
+            <section id="security" class="section">
+                <h2>Security</h2>
+                <ul class="list">
+                    <li>
+                        <strong>Rate limiting</strong> through Fiber's limiter, a fixed window keyed by client
+                        IP, attached to the <code>/api</code> group only. Counters live in the process, so each
+                        replica enforces its own limit; behind a proxy set <code>TRUSTED_PROXIES</code>.
+                    </li>
+                    <li>
+                        <strong>Not indexable</strong> — <code>X-Robots-Tag: noindex, nofollow, noarchive</code>
+                        on every response, <code>&lt;meta name="robots" content="noindex, nofollow"&gt;</code>
+                        on the page, a <code>robots.txt</code> that disallows everything, and <code>403</code>
+                        for known crawler and scraper user agents on the client files and the API. Redirects
+                        and <code>/healthz</code> stay open.
+                    </li>
+                    <li>
+                        <strong>Headers</strong> — a strict <code>Content-Security-Policy</code>
+                        (<code>default-src 'self'</code>, no inline scripts or styles,
+                        <code>frame-ancestors 'none'</code>), <code>nosniff</code>,
+                        <code>X-Frame-Options: DENY</code> and <code>Referrer-Policy: no-referrer</code>.
+                    </li>
+                    <li>
+                        <strong>Codes</strong> are 12 characters of <code>[0-9A-Za-z]</code> drawn from
+                        <code>crypto/rand</code> without modulo bias — around 71 bits, so links cannot be
+                        enumerated.
+                    </li>
+                    <li>
+                        <strong>Everything expires</strong> after <code>URL_TTL</code>, 30 days by default.
+                        Bodies are capped at 4096 bytes and target URLs at 2048 characters.
+                    </li>
+                </ul>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <div class="wrap">
+                <p>
+                    shortr is free for noncommercial use under the
+                    <a href="https://github.com/Flyrell/shortr/blob/main/LICENSE">PolyForm Noncommercial License
+                    1.0.0</a>; commercial use requires a paid license — inquiries at
+                    <a href="https://zbinski.dev">https://zbinski.dev</a>.
+                </p>
+                <p class="footer__meta">
+                    <a href="https://github.com/Flyrell/shortr">github.com/Flyrell/shortr</a>
+                </p>
+            </div>
+        </footer>
+    </body>
+</html>

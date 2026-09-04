@@ -4,7 +4,7 @@ vars:
   IMAGE: repository.zbinski.dev/shortr:latest
 
 tasks:
-  deploy:
+  project:deploy:
     desc: Build the production image for linux/amd64 and push it to the registry.
     dir: '{{.ROOT_DIR}}'
     cmds:

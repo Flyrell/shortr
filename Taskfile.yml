@@ -20,6 +20,7 @@ includes:
   local:
     taskfile: Taskfile.local.yml
     optional: true
+    flatten: true
 
 tasks:
   project:start:
