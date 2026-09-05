@@ -1,7 +1,7 @@
 version: '3'
 
 vars:
-  IMAGE: repository.zbinski.dev/shortr:latest
+  IMAGE: shortr:latest
 
 tasks:
   project:deploy:
