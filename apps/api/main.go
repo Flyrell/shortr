@@ -49,10 +49,11 @@ func run() error {
 
 	app := server.New(&server.Deps{
 		Logger:          logger,
-		Shortener:       services.NewShortener(adapter, cfg.BaseURL, cfg.URLTTL),
+		Shortener:       services.NewShortener(adapter, cfg.BaseURL, cfg.URLTTL, cfg.URLMaxLength),
 		Adapter:         adapter,
 		BaseURL:         cfg.BaseURL,
 		StaticDir:       cfg.StaticDir,
+		URLMaxLength:    cfg.URLMaxLength,
 		TrustedProxies:  cfg.TrustedProxies,
 		RateLimitWindow: cfg.RateLimitMode.Window(),
 		RateLimitValue:  cfg.RateLimitValue,

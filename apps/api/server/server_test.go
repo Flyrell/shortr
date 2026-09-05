@@ -24,6 +24,7 @@ import (
 const (
 	shortenBody      = `{"url":"https://example.com/x"}`
 	defaultRateLimit = 100
+	testURLMaxLength = 4096
 	redirectTarget   = "https://example.com/x"
 )
 
@@ -177,6 +178,29 @@ func TestRateLimitAppliesToShortenOnly(t *testing.T) {
 	}
 }
 
+func TestShortenAcceptsAURLAtTheConfiguredLimit(t *testing.T) {
+	t.Parallel()
+
+	const prefix = "https://example.com/"
+	body, err := json.Marshal(map[string]string{"url": prefix + strings.Repeat("a", testURLMaxLength-len(prefix))})
+	if err != nil {
+		t.Fatalf("Marshal() error = %v", err)
+	}
+	// The JSON wrapper pushes the body past the url cap, so a body limit equal
+	// to that cap would reject the longest accepted url with a 413.
+	if len(body) <= testURLMaxLength {
+		t.Fatalf("body = %d bytes, want more than the url limit of %d", len(body), testURLMaxLength)
+	}
+
+	request := httptest.NewRequest(http.MethodPost, "/api/shorten", strings.NewReader(string(body)))
+	request.Header.Set(fiber.HeaderContentType, fiber.MIMEApplicationJSON)
+	response := servertest.Do(t, newTestApp(t, appStubs{}), request)
+
+	if response.StatusCode != http.StatusCreated {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusCreated)
+	}
+}
+
 func TestConfig(t *testing.T) {
 	t.Parallel()
 
@@ -186,7 +210,7 @@ func TestConfig(t *testing.T) {
 	if got.AppName != "shortr" || !got.StrictRouting || !got.CaseSensitive || !got.Immutable {
 		t.Errorf("routing config = %+v", got)
 	}
-	if got.BodyLimit != bodyLimit || got.ReadTimeout != readTimeout || got.WriteTimeout != writeTimeout || got.IdleTimeout != idleTimeout {
+	if got.BodyLimit != testURLMaxLength+bodyLimitHeadroom || got.ReadTimeout != readTimeout || got.WriteTimeout != writeTimeout || got.IdleTimeout != idleTimeout {
 		t.Errorf("limits = %+v", got)
 	}
 	if !got.TrustProxy || !got.EnableIPValidation || got.ProxyHeader != fiber.HeaderXForwardedFor {
@@ -221,6 +245,7 @@ func newTestApp(t *testing.T, stubs appStubs) *fiber.App {
 		Adapter:         servertest.StubPinger{Err: stubs.pingErr},
 		BaseURL:         "https://sho.rt",
 		StaticDir:       staticDir(t),
+		URLMaxLength:    testURLMaxLength,
 		TrustedProxies:  stubs.trustedProxies,
 		RateLimitWindow: time.Minute,
 		RateLimitValue:  limit,

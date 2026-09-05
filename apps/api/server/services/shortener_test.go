@@ -36,7 +36,7 @@ func TestShortenerShorten(t *testing.T) {
 func TestNewShortenerMeasuresExpiryFromTheWallClock(t *testing.T) {
 	t.Parallel()
 
-	got, err := NewShortener(&stubStore{}, "https://sho.rt", time.Hour).Shorten(t.Context(), "https://example.com")
+	got, err := NewShortener(&stubStore{}, "https://sho.rt", time.Hour, testMaxURLLength).Shorten(t.Context(), "https://example.com")
 	if err != nil {
 		t.Fatalf("Shorten() error = %v", err)
 	}
@@ -151,32 +151,82 @@ func TestShortenerResolve(t *testing.T) {
 func TestValidateURL(t *testing.T) {
 	t.Parallel()
 
-	accepted := []string{
-		"https://example.com",
-		"http://example.com/a/b?c=d#e",
-		"https://example.com:8443/x",
-		"https://exämple.com/café",
-		"https://example.com/" + strings.Repeat("a", 2028),
-	}
-	rejected := []string{
-		"", "/relative", "https://", "ftp://example.com", "javascript:alert(1)",
-		"data:text/html,<script>alert(1)</script>", "file:///etc/passwd",
-		"https://example.com/a b", "https://example.com/\n", "https://example.com/\ta",
-		"https://example.com/" + strings.Repeat("a", 2029), "https://example.com/%zz",
-		"http://example.com/\x7f", "https://exam\u0080ple.com/", "https://exa\u200bmple.com/",
-		"https://example.com/\ufeff", "https://accounts.example.com@evil.example/login",
-		"https://user:pass@example.com/",
+	// The limit is small so a row can spell out the message it produces.
+	const maxLength = 64
+	const prefix = "https://example.com/"
+	filler := func(length int) string { return prefix + strings.Repeat("a", length-len(prefix)) }
+
+	tests := []struct {
+		name        string
+		rawURL      string
+		wantMessage string
+	}{
+		{name: "host only", rawURL: "https://example.com"},
+		{name: "path query and fragment", rawURL: "http://example.com/a/b?c=d#e"},
+		{name: "explicit port", rawURL: "https://example.com:8443/x"},
+		{name: "non ascii host and path", rawURL: "https://exämple.com/café"},
+		{name: "exactly the limit", rawURL: filler(maxLength)},
+		{name: "empty", wantMessage: "the url must not be empty"},
+		{name: "one over the limit", rawURL: filler(maxLength + 1), wantMessage: "the url must be at most 64 characters"},
+		{name: "space", rawURL: "https://example.com/a b", wantMessage: "the url must not contain whitespace"},
+		{name: "newline", rawURL: "https://example.com/\n", wantMessage: "the url must not contain whitespace"},
+		{name: "tab", rawURL: "https://example.com/\ta", wantMessage: "the url must not contain whitespace"},
+		{name: "delete character", rawURL: "http://example.com/\x7f", wantMessage: "the url must not contain control characters"},
+		{name: "c1 control", rawURL: "https://exam\u0080ple.com/", wantMessage: "the url must not contain control characters"},
+		{name: "zero width space", rawURL: "https://exa\u200bmple.com/", wantMessage: "the url must not contain control characters"},
+		{name: "byte order mark", rawURL: "https://example.com/\ufeff", wantMessage: "the url must not contain control characters"},
+		{name: "broken escape", rawURL: "https://example.com/%zz", wantMessage: "the url must be a valid url"},
+		{name: "relative", rawURL: "/relative", wantMessage: "the url must be absolute"},
+		{name: "ftp scheme", rawURL: "ftp://example.com", wantMessage: "the url must use the http or https scheme"},
+		{name: "javascript scheme", rawURL: "javascript:alert(1)", wantMessage: "the url must use the http or https scheme"},
+		{name: "data scheme", rawURL: "data:text/html,<script>alert(1)</script>", wantMessage: "the url must use the http or https scheme"},
+		{name: "file scheme", rawURL: "file:///etc/passwd", wantMessage: "the url must use the http or https scheme"},
+		{name: "scheme without a host", rawURL: "https://", wantMessage: "the url must include a host"},
+		{name: "host shaped userinfo", rawURL: "https://accounts.example.com@evil.example/login", wantMessage: "the url must not contain user information"},
+		{name: "credentials", rawURL: "https://user:pass@example.com/", wantMessage: "the url must not contain user information"},
 	}
 
-	for _, rawURL := range accepted {
-		if err := validateURL(rawURL); err != nil {
-			t.Errorf("validateURL(%q) error = %v", rawURL, err)
-		}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+
+			err := validateURL(test.rawURL, maxLength)
+			if test.wantMessage == "" {
+				if err != nil {
+					t.Fatalf("validateURL(%q) error = %v", test.rawURL, err)
+				}
+				return
+			}
+			if !errors.Is(err, ErrInvalidURL) {
+				t.Fatalf("validateURL(%q) error = %v, want it to wrap ErrInvalidURL", test.rawURL, err)
+			}
+			var invalid InvalidURLError
+			if !errors.As(err, &invalid) {
+				t.Fatalf("validateURL(%q) error = %v, want an InvalidURLError", test.rawURL, err)
+			}
+			if invalid.Message != test.wantMessage {
+				t.Errorf("Message = %q, want %q", invalid.Message, test.wantMessage)
+			}
+			if want := "shortener: " + test.wantMessage; err.Error() != want {
+				t.Errorf("Error() = %q, want %q", err, want)
+			}
+		})
 	}
-	for _, rawURL := range rejected {
-		if err := validateURL(rawURL); !errors.Is(err, ErrInvalidURL) {
-			t.Errorf("validateURL(%q) error = %v, want ErrInvalidURL", rawURL, err)
-		}
+}
+
+func TestShortenerShortenReportsTheConfiguredURLLimit(t *testing.T) {
+	t.Parallel()
+
+	const maxLength = 128
+	shortener := newShortener(&stubStore{}, "https://sho.rt", time.Hour, maxLength, func() time.Time { return shortenerTime })
+
+	_, err := shortener.Shorten(t.Context(), "https://example.com/"+strings.Repeat("a", maxLength))
+	var invalid InvalidURLError
+	if !errors.As(err, &invalid) {
+		t.Fatalf("Shorten() error = %v, want an InvalidURLError", err)
+	}
+	if want := "the url must be at most 128 characters"; invalid.Message != want {
+		t.Errorf("Message = %q, want %q", invalid.Message, want)
 	}
 }
 
@@ -205,7 +255,10 @@ func TestGenerateCode(t *testing.T) {
 	}
 }
 
-const knownCode = "abc1234defgh"
+const (
+	knownCode        = "abc1234defgh"
+	testMaxURLLength = 4096
+)
 
 var shortenerTime = time.Date(2026, time.September, 4, 12, 0, 0, 0, time.UTC)
 
@@ -238,5 +291,5 @@ func (s *stubStore) FindURL(_ context.Context, _ string) (string, error) {
 }
 
 func newTestShortener(store urlStore) *Shortener {
-	return newShortener(store, "https://sho.rt", 24*time.Hour, func() time.Time { return shortenerTime })
+	return newShortener(store, "https://sho.rt", 24*time.Hour, testMaxURLLength, func() time.Time { return shortenerTime })
 }

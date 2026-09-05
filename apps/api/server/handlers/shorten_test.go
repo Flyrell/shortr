@@ -26,6 +26,7 @@ func TestShortenRejectsBadRequests(t *testing.T) {
 		shortenErr  error
 		wantStatus  int
 		wantCode    string
+		wantMessage string
 	}{
 		{name: "plain text", contentType: "text/plain", body: "https://example.com", wantStatus: http.StatusUnsupportedMediaType, wantCode: "unsupported_media_type"},
 		{name: "no content type", body: `{"url":"https://example.com"}`, wantStatus: http.StatusUnsupportedMediaType, wantCode: "unsupported_media_type"},
@@ -37,9 +38,19 @@ func TestShortenRejectsBadRequests(t *testing.T) {
 			name:        "invalid url",
 			contentType: fiber.MIMEApplicationJSON,
 			body:        `{"url":"ftp://example.com"}`,
-			shortenErr:  services.ErrInvalidURL,
+			shortenErr:  services.InvalidURLError{Message: "the url must use the http or https scheme"},
 			wantStatus:  http.StatusBadRequest,
 			wantCode:    "invalid_url",
+			wantMessage: "the url must use the http or https scheme",
+		},
+		{
+			name:        "url over the length limit",
+			contentType: fiber.MIMEApplicationJSON,
+			body:        `{"url":"https://example.com/too-long"}`,
+			shortenErr:  services.InvalidURLError{Message: "the url must be at most 4096 characters"},
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_url",
+			wantMessage: "the url must be at most 4096 characters",
 		},
 		{
 			name:        "service failure",
@@ -67,8 +78,12 @@ func TestShortenRejectsBadRequests(t *testing.T) {
 			if response.StatusCode != test.wantStatus {
 				t.Fatalf("status = %d, want %d", response.StatusCode, test.wantStatus)
 			}
-			if got := decodeJSON[errorBody](t, response).Error; got != test.wantCode {
-				t.Errorf("error = %q, want %q", got, test.wantCode)
+			body := decodeJSON[errorBody](t, response)
+			if body.Error != test.wantCode {
+				t.Errorf("error = %q, want %q", body.Error, test.wantCode)
+			}
+			if test.wantMessage != "" && body.Message != test.wantMessage {
+				t.Errorf("message = %q, want %q", body.Message, test.wantMessage)
 			}
 		})
 	}

@@ -333,7 +333,8 @@ type Adapter interface {
                     </li>
                     <li>
                         <strong>Everything expires</strong> after <code>URL_TTL</code>, 30 days by default.
-                        Bodies are capped at 4096 bytes and target URLs at 2048 characters.
+                        Target URLs are capped at <code>URL_MAX_LENGTH</code>, 4096 bytes by default,
+                        and bodies at that cap plus 1024 bytes for the JSON wrapper.
                     </li>
                 </ul>
             </section>

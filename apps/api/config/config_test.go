@@ -30,6 +30,7 @@ func TestLoadDefaults(t *testing.T) {
 		BaseURL:        "http://localhost:8080",
 		StaticDir:      "./apps/client/dist",
 		URLTTL:         30 * 24 * time.Hour,
+		URLMaxLength:   4096,
 		Persister:      "memory",
 		RateLimitMode:  RateLimitDay,
 		RateLimitValue: 30,
@@ -40,6 +41,9 @@ func TestLoadDefaults(t *testing.T) {
 	}
 	if cfg.URLTTL != want.URLTTL || cfg.Persister != want.Persister {
 		t.Errorf("Load() ttl/persister = %v/%v, want %v/%v", cfg.URLTTL, cfg.Persister, want.URLTTL, want.Persister)
+	}
+	if cfg.URLMaxLength != want.URLMaxLength {
+		t.Errorf("Load() url max length = %d, want %d", cfg.URLMaxLength, want.URLMaxLength)
 	}
 	if cfg.RateLimitMode != want.RateLimitMode || cfg.RateLimitValue != want.RateLimitValue {
 		t.Errorf("Load() rate limit = %v/%d, want %v/%d", cfg.RateLimitMode, cfg.RateLimitValue, want.RateLimitMode, want.RateLimitValue)
@@ -60,6 +64,7 @@ func TestLoadOverrides(t *testing.T) {
 		"BASE_URL":         "  https://sho.rt/  ",
 		"STATIC_DIR":       staticDir,
 		"URL_TTL":          "12h",
+		"URL_MAX_LENGTH":   "8192",
 		"RATE_LIMIT_MODE":  "minute",
 		"RATE_LIMIT_VALUE": "5",
 		"TRUSTED_PROXIES":  "10.0.0.0/8, 192.168.1.0/24",
@@ -73,6 +78,9 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if cfg.URLTTL != 12*time.Hour || cfg.RateLimitMode != RateLimitMinute || cfg.RateLimitValue != 5 {
 		t.Errorf("Load() ttl/rate = %v/%v/%d", cfg.URLTTL, cfg.RateLimitMode, cfg.RateLimitValue)
+	}
+	if cfg.URLMaxLength != 8192 {
+		t.Errorf("Load() url max length = %d, want 8192", cfg.URLMaxLength)
 	}
 	if len(cfg.TrustedProxies) != 2 || cfg.TrustedProxies[0].String() != "10.0.0.0/8" {
 		t.Errorf("Load() trusted proxies = %v", cfg.TrustedProxies)
@@ -156,6 +164,9 @@ func TestLoadValidationFailures(t *testing.T) {
 		{"ttl malformed", map[string]string{"URL_TTL": "30days"}, "URL_TTL"},
 		{"ttl zero", map[string]string{"URL_TTL": "0s"}, "URL_TTL"},
 		{"ttl negative", map[string]string{"URL_TTL": "-1h"}, "URL_TTL"},
+		{"url max length not a number", map[string]string{"URL_MAX_LENGTH": "long"}, "URL_MAX_LENGTH"},
+		{"url max length too low", map[string]string{"URL_MAX_LENGTH": "255"}, "URL_MAX_LENGTH"},
+		{"url max length too high", map[string]string{"URL_MAX_LENGTH": "65537"}, "URL_MAX_LENGTH"},
 		{"rate limit mode unknown", map[string]string{"RATE_LIMIT_MODE": "week"}, "RATE_LIMIT_MODE"},
 		{"rate limit value zero", map[string]string{"RATE_LIMIT_VALUE": "0"}, "RATE_LIMIT_VALUE"},
 		{"rate limit value malformed", map[string]string{"RATE_LIMIT_VALUE": "many"}, "RATE_LIMIT_VALUE"},
