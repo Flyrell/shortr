@@ -338,7 +338,7 @@ body {
 .alert {
     margin: 16px 0 0;
     display: flex;
-    align-items: flex-start;
+    align-items: baseline;
     gap: 10px;
     padding: 12px 14px;
     border-radius: 16px;
