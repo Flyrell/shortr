@@ -77,11 +77,10 @@
                     <article class="card">
                         <h3>docker run</h3>
                         <p>
-                            Build the production image and run it. With no <code>URL_PERSISTER</code> set, links
-                            are kept in memory and nothing else is needed.
+                            Run the published image. With no <code>URL_PERSISTER</code> set, links are kept in
+                            memory and nothing else is needed.
                         </p>
-                        <pre><code>docker build -f .docker/Dockerfile -t shortr:latest .
-docker run --rm -p 8080:8080 shortr:latest</code></pre>
+                        <pre><code>docker run --rm -p 8080:8080 dawidzbinski/shortr:latest</code></pre>
                         <p class="note">
                             Serving from another origin? Add
                             <code>-e BASE_URL=https://s.example.com</code> so the returned links point at it.

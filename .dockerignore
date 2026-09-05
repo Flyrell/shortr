@@ -8,3 +8,4 @@ docs
 **/Taskfile*.yml
 .env
 .env.*
+.github

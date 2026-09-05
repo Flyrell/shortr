@@ -10,6 +10,7 @@ image contains both. Links expire, there are no accounts, and nothing is tracked
 - [Client](#client)
 - [Development](#development)
 - [Production image](#production-image)
+- [Releases](#releases)
 - [Deploying](#deploying)
 - [Writing an adapter](#writing-an-adapter)
 - [Security notes](#security-notes)
@@ -20,12 +21,11 @@ image contains both. Links expire, there are no accounts, and nothing is tracked
 
 ### docker run (in-memory storage)
 
-Build the production image and run it. With no `URL_PERSISTER` set the API keeps links in memory, so it
-needs no other service.
+Run the published image. With no `URL_PERSISTER` set the API keeps links in memory, so it needs no other
+service.
 
 ```sh
-docker build -f .docker/Dockerfile -t shortr:latest .
-docker run --rm -p 8080:8080 shortr:latest
+docker run --rm -p 8080:8080 dawidzbinski/shortr:latest
 ```
 
 Open <http://localhost:8080>. Links live in the process: restarting the container drops them.
@@ -33,7 +33,7 @@ Open <http://localhost:8080>. Links live in the process: restarting the containe
 If the app is reachable under another origin, set `BASE_URL` so the returned short links point at it:
 
 ```sh
-docker run --rm -p 8080:8080 -e BASE_URL=https://s.example.com shortr:latest
+docker run --rm -p 8080:8080 -e BASE_URL=https://s.example.com dawidzbinski/shortr:latest
 ```
 
 ### docker compose (Redis storage)
@@ -212,7 +212,8 @@ two together.
 ## Production image
 
 `.docker/Dockerfile` is a single multi-stage file; its last stage is the production image built by
-`task api:build`.
+`task api:build` and published to [`dawidzbinski/shortr`](https://hub.docker.com/r/dawidzbinski/shortr) by
+[the release workflow](#releases).
 
 - Base `gcr.io/distroless/static-debian12:nonroot` — no shell, no package manager, no Go or Node toolchain.
 - Contents: the static `/shortr` binary (`CGO_ENABLED=0`, `-trimpath`, `-ldflags="-s -w"`) and the built
@@ -220,6 +221,60 @@ two together.
 - `ENV STATIC_DIR=/srv/client PORT=8080`, `EXPOSE 8080`, `USER nonroot`, `ENTRYPOINT ["/shortr"]`.
 
 Because the image has no shell, container healthchecks must come from outside; probe `GET /healthz` instead.
+
+## Releases
+
+`.github/workflows/release.yml` runs after CI, on every commit that lands on `main` and goes green. It
+tags the commit, pushes the production image to
+[`dawidzbinski/shortr`](https://hub.docker.com/r/dawidzbinski/shortr) and publishes a GitHub release with
+generated notes. A commit that fails CI is never tagged and never published.
+
+`.github/next-version.sh` derives the version from the commit subjects since the newest `v*` tag:
+
+| Subject | Bump |
+| --- | --- |
+| `breaking:`, `breaking(api):`, or any type with a `!` marker (`feat!:`) | major |
+| `feat:`, `feat(api):` | minor |
+| anything else — `fix`, `chore`, `docs`, `refactor`, `test`, `build`, `ci` | patch |
+
+A push carrying several commits produces one release, at the highest bump those commits ask for. Run
+`.github/next-version.sh` in a checkout with tags and full history to print what the next version would be
+without releasing anything.
+
+The first release is `v0.1.0`, because the history holds `feat` commits and no breaking one. To start at
+`1.0.0` instead, push a `v1.0.0` tag before the first release run.
+
+Every release pushes four Docker Hub tags — `1.2.3`, `1.2`, `1` and `latest` — as one multi-platform image
+for `linux/amd64`, `linux/arm64` and `linux/arm/v7`. Both build stages in `.docker/Dockerfile` run on the
+builder's own architecture and cross-compile, and the runtime stage only copies files in, so the extra
+platforms need no emulation.
+
+### Credentials
+
+The workflow reads two repository settings, under **Settings → Secrets and variables → Actions**:
+
+| Name | Kind | Value |
+| --- | --- | --- |
+| `DOCKERHUB_USERNAME` | variable | The Docker Hub account name, `dawidzbinski` |
+| `DOCKERHUB_TOKEN` | secret | A Docker Hub personal access token with the **Read & Write** scope |
+
+Create the token under **Docker Hub → Account settings → Personal access tokens**, and use it instead of
+the account password: it can be scoped, revoked on its own, and its last use is visible.
+
+Nothing about it is public:
+
+- Secrets are encrypted at rest, are readable only by workflow runs in this repository, and are masked if
+  a run ever prints one. The repository being public changes none of that.
+- A pull request from a fork never receives them. This workflow cannot be reached from a fork at all: it
+  triggers only on `workflow_run` for CI runs on `main`.
+- Only `docker/login-action` reads the token. Keep it out of `run:` steps, where a shell trace or an error
+  message could echo it.
+- Set **Settings → Actions → General → Fork pull request workflows → Require approval for all external
+  contributors** so no outside change runs CI unreviewed.
+
+To rotate, revoke the token in Docker Hub, create a replacement and update the secret; nothing else
+changes. For an extra gate, move `DOCKERHUB_TOKEN` into a GitHub environment and add required reviewers to
+it, then name that environment in the `publish` job.
 
 ## Deploying
 
