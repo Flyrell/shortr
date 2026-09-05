@@ -4,6 +4,8 @@ import { run } from './build';
 
 type WatchListener = (event: string, filename: string | null) => void;
 
+const staticNames = ['index.html', 'robots.txt', 'favicon.svg', 'favicon.png', 'apple-touch-icon.png', 'og.png'];
+
 const mocks = vi.hoisted(() => ({
     build: vi.fn<(options: unknown) => Promise<void>>(),
     context: vi.fn<(options: unknown) => Promise<{ watch: () => Promise<void> }>>(),
@@ -90,7 +92,7 @@ describe('run', () => {
         await run([]);
 
         expect(mocks.mkdir).toHaveBeenCalledWith(expect.stringMatching(/dist$/), { recursive: true });
-        expect(copiedNames()).toEqual(['index.html', 'robots.txt', 'favicon.svg']);
+        expect(copiedNames()).toEqual(staticNames);
     });
 
     test('starts the esbuild and static file watchers with --watch', async () => {
@@ -112,7 +114,7 @@ describe('run', () => {
         expect(mocks.copyFile).not.toHaveBeenCalled();
 
         watchListener()('change', 'index.html');
-        await vi.waitFor(() => expect(copiedNames()).toEqual(['index.html', 'robots.txt', 'favicon.svg']));
+        await vi.waitFor(() => expect(copiedNames()).toEqual(staticNames));
     });
 
     test('logs and survives a copy that fails after a rename', async () => {
