@@ -28,7 +28,20 @@ func TestErrorHandler(t *testing.T) {
 	}{
 		{name: "api error", err: errInvalidBody, wantStatus: http.StatusBadRequest, wantCode: "invalid_body"},
 		{name: "wrapped api error", err: fmt.Errorf("bind: %w", errInvalidBody), wantStatus: http.StatusBadRequest, wantCode: "invalid_body"},
-		{name: "invalid url", err: fmt.Errorf("%w: must be absolute", services.ErrInvalidURL), wantStatus: http.StatusBadRequest, wantCode: "invalid_url"},
+		{
+			name:        "invalid url",
+			err:         services.InvalidURLError{Message: "the url must be at most 4096 characters"},
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_url",
+			wantMessage: "the url must be at most 4096 characters",
+		},
+		{
+			name:        "wrapped invalid url",
+			err:         fmt.Errorf("shorten: %w", services.InvalidURLError{Message: "the url must not contain whitespace"}),
+			wantStatus:  http.StatusBadRequest,
+			wantCode:    "invalid_url",
+			wantMessage: "the url must not contain whitespace",
+		},
 		{name: "not found", err: services.ErrNotFound, wantStatus: http.StatusNotFound, wantCode: "not_found"},
 		{name: "fiber not found", err: fiber.ErrNotFound, wantStatus: http.StatusNotFound, wantCode: "not_found"},
 		{name: "fiber method not allowed", err: fiber.ErrMethodNotAllowed, wantStatus: http.StatusMethodNotAllowed, wantCode: "method_not_allowed"},

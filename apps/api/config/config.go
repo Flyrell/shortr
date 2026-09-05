@@ -12,6 +12,7 @@ const (
 	defaultBaseURL        = "http://localhost:8080"
 	defaultStaticDir      = "./apps/client/dist"
 	defaultURLTTL         = "30d"
+	defaultURLMaxLength   = 4096
 	defaultPersister      = "memory"
 	defaultRateLimitValue = 30
 	defaultLogLevel       = "info"
@@ -25,6 +26,7 @@ type Config struct {
 	BaseURL        string
 	StaticDir      string
 	URLTTL         time.Duration
+	URLMaxLength   int
 	Persister      string
 	RateLimitMode  RateLimitMode
 	RateLimitValue int
@@ -47,6 +49,9 @@ func Load(lookup Lookup) (Config, error) {
 		return Config{}, err
 	}
 	if cfg.URLTTL, err = ttlVar(lookup, "URL_TTL", defaultURLTTL); err != nil {
+		return Config{}, err
+	}
+	if cfg.URLMaxLength, err = boundedIntVar(lookup, "URL_MAX_LENGTH", defaultURLMaxLength, 256, 65536); err != nil {
 		return Config{}, err
 	}
 	// The set of adapter names belongs to the adapters package, which validates

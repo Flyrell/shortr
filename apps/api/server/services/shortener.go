@@ -16,7 +16,6 @@ import (
 
 const (
 	maxSaveAttempts = 5
-	maxURLLength    = 2048
 	codeLength      = 12
 	codeAlphabet    = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz"
 )
@@ -26,6 +25,14 @@ var (
 	ErrNotFound      = fmt.Errorf("shortener: %w", adapters.ErrNotFound)
 	ErrCodeExhausted = errors.New("shortener: could not allocate a free code")
 )
+
+type InvalidURLError struct {
+	Message string
+}
+
+func (e InvalidURLError) Error() string { return "shortener: " + e.Message }
+
+func (e InvalidURLError) Unwrap() error { return ErrInvalidURL }
 
 type clock func() time.Time
 
@@ -41,22 +48,23 @@ type ShortURL struct {
 }
 
 type Shortener struct {
-	store   urlStore
-	baseURL string
-	ttl     time.Duration
-	now     clock
+	store        urlStore
+	baseURL      string
+	ttl          time.Duration
+	maxURLLength int
+	now          clock
 }
 
-func NewShortener(store urlStore, baseURL string, ttl time.Duration) *Shortener {
-	return newShortener(store, baseURL, ttl, time.Now)
+func NewShortener(store urlStore, baseURL string, ttl time.Duration, maxURLLength int) *Shortener {
+	return newShortener(store, baseURL, ttl, maxURLLength, time.Now)
 }
 
-func newShortener(store urlStore, baseURL string, ttl time.Duration, now clock) *Shortener {
-	return &Shortener{store: store, baseURL: baseURL, ttl: ttl, now: now}
+func newShortener(store urlStore, baseURL string, ttl time.Duration, maxURLLength int, now clock) *Shortener {
+	return &Shortener{store: store, baseURL: baseURL, ttl: ttl, maxURLLength: maxURLLength, now: now}
 }
 
 func (s *Shortener) Shorten(ctx context.Context, rawURL string) (ShortURL, error) {
-	if err := validateURL(rawURL); err != nil {
+	if err := validateURL(rawURL, s.maxURLLength); err != nil {
 		return ShortURL{}, err
 	}
 	expiresAt := s.now().Add(s.ttl)
@@ -92,38 +100,38 @@ func (s *Shortener) Resolve(ctx context.Context, code string) (string, error) {
 	return target, nil
 }
 
-func validateURL(rawURL string) error {
+func validateURL(rawURL string, maxLength int) error {
 	if rawURL == "" {
-		return fmt.Errorf("%w: must not be empty", ErrInvalidURL)
+		return InvalidURLError{Message: "the url must not be empty"}
 	}
-	if len(rawURL) > maxURLLength {
-		return fmt.Errorf("%w: must be at most %d characters", ErrInvalidURL, maxURLLength)
+	if len(rawURL) > maxLength {
+		return InvalidURLError{Message: fmt.Sprintf("the url must be at most %d characters", maxLength)}
 	}
 	if strings.ContainsFunc(rawURL, unicode.IsSpace) {
-		return fmt.Errorf("%w: must not contain whitespace", ErrInvalidURL)
+		return InvalidURLError{Message: "the url must not contain whitespace"}
 	}
 	// net/url only guards the ASCII controls, leaving the C1 controls, the zero
 	// width space and the byte order mark free to disguise a host.
 	if strings.ContainsFunc(rawURL, func(r rune) bool { return !unicode.IsPrint(r) }) {
-		return fmt.Errorf("%w: must not contain control characters", ErrInvalidURL)
+		return InvalidURLError{Message: "the url must not contain control characters"}
 	}
 	parsed, err := url.Parse(rawURL)
 	if err != nil {
-		return fmt.Errorf("%w: must be a valid URL", ErrInvalidURL)
+		return InvalidURLError{Message: "the url must be a valid url"}
 	}
 	if !parsed.IsAbs() {
-		return fmt.Errorf("%w: must be absolute", ErrInvalidURL)
+		return InvalidURLError{Message: "the url must be absolute"}
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return fmt.Errorf("%w: must use the http or https scheme", ErrInvalidURL)
+		return InvalidURLError{Message: "the url must use the http or https scheme"}
 	}
 	if parsed.Host == "" {
-		return fmt.Errorf("%w: must include a host", ErrInvalidURL)
+		return InvalidURLError{Message: "the url must include a host"}
 	}
 	// Userinfo lets a link read as a trusted brand while pointing elsewhere,
 	// for example https://bank.example@evil.example/.
 	if parsed.User != nil {
-		return fmt.Errorf("%w: must not contain user information", ErrInvalidURL)
+		return InvalidURLError{Message: "the url must not contain user information"}
 	}
 	return nil
 }

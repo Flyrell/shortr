@@ -61,6 +61,7 @@ the variable.
 | `BASE_URL` | `http://localhost:8080` | Public origin used to build short links. Must parse as a URL with an `http`/`https` scheme and a host. Trailing slashes are stripped. |
 | `STATIC_DIR` | `./apps/client/dist` | Directory holding the built client. Must exist and be a directory at startup. |
 | `URL_TTL` | `30d` | How long a link lives. Go duration syntax (`12h`, `90m`, `30s`) plus an `Nd` day suffix. Must be greater than zero. |
+| `URL_MAX_LENGTH` | `4096` | Longest target URL accepted, in bytes (one byte per character for ASCII URLs). Integer between 256 and 65536. The request body cap follows it: `URL_MAX_LENGTH` + 1024 bytes, room for the JSON wrapper. |
 | `URL_PERSISTER` | `memory` | Storage adapter: `memory` or `redis`. Unknown names abort the start. |
 | `RATE_LIMIT_MODE` | `day` | Rate limit window: `second`, `minute`, `hour` or `day`. |
 | `RATE_LIMIT_VALUE` | `30` | Requests allowed per window per client IP. Integer of at least 1. |
@@ -89,8 +90,11 @@ Keys are stored as `url:<code>` with `SET NX EX`, so expiry is handled by Redis.
 Errors share one JSON shape:
 
 ```json
-{ "error": "invalid_url", "message": "the url must be an absolute http or https url" }
+{ "error": "invalid_url", "message": "the url must be at most 4096 characters" }
 ```
+
+The `error` code is stable; the `message` states the reason that actually applied, so a rejected URL says
+whether it was too long, not absolute, or carried whitespace.
 
 ### `POST /api/shorten`
 
@@ -115,9 +119,9 @@ curl -X POST http://localhost:8080/api/shorten \
 | Status | `error` | Cause |
 | --- | --- | --- |
 | 400 | `invalid_body` | Body is not a JSON object with a `url` field, or `url` is empty. |
-| 400 | `invalid_url` | Not an absolute `http`/`https` URL, longer than 2048 characters, contains whitespace, control characters or user information. |
+| 400 | `invalid_url` | Not an absolute `http`/`https` URL, longer than `URL_MAX_LENGTH`, or carrying whitespace, control characters or user information. The `message` names which of these it was. |
 | 403 | `forbidden` | The `User-Agent` matches the blocked crawler list. |
-| 413 | `body_too_large` | Body exceeds the 4096 byte limit. |
+| 413 | `body_too_large` | Body exceeds `URL_MAX_LENGTH` + 1024 bytes (5120 by default). |
 | 415 | `unsupported_media_type` | The content type is not JSON. |
 | 429 | `rate_limited` | Rate limit exhausted. The limiter sets `Retry-After` on the rejected response; `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset` are set on accepted ones. |
 | 500 | `internal` | Storage failure, or no free code after 5 attempts. |
@@ -277,7 +281,8 @@ That is the whole surface. Rate limiting, code generation and URL validation are
   modulo bias — roughly 71 bits, so links cannot be enumerated or guessed.
 - **Everything expires.** Every link is written with `URL_TTL` (30 days by default) and disappears afterwards:
   Redis expires the key itself, the memory adapter expires on read and sweeps in the background.
-- **Input limits.** Bodies are capped at 4096 bytes, target URLs at 2048 characters, and URLs carrying
+- **Input limits.** Target URLs are capped at `URL_MAX_LENGTH` (4096 bytes by default) and bodies at that
+  cap plus 1024 bytes for the JSON wrapper, so the longest accepted URL always reaches validation. URLs carrying
   whitespace, control characters or `user:password@` credentials are rejected.
 
 ## End-to-end tests

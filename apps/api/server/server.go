@@ -14,10 +14,10 @@ import (
 )
 
 const (
-	bodyLimit    = 4096
-	readTimeout  = 10 * time.Second
-	writeTimeout = 15 * time.Second
-	idleTimeout  = 60 * time.Second
+	bodyLimitHeadroom = 1024
+	readTimeout       = 10 * time.Second
+	writeTimeout      = 15 * time.Second
+	idleTimeout       = 60 * time.Second
 )
 
 type Deps struct {
@@ -25,6 +25,7 @@ type Deps struct {
 	Shortener       handlers.Shortener
 	Adapter         handlers.Pinger
 	StaticDir       string
+	URLMaxLength    int
 	TrustedProxies  []netip.Prefix
 	RateLimitWindow time.Duration
 	RateLimitValue  int
@@ -35,10 +36,13 @@ func New(deps *Deps) *fiber.App {
 		AppName:       "shortr",
 		StrictRouting: true,
 		CaseSensitive: true,
-		BodyLimit:     bodyLimit,
-		ReadTimeout:   readTimeout,
-		WriteTimeout:  writeTimeout,
-		IdleTimeout:   idleTimeout,
+		// The shorten body carries the target url inside a JSON object, so the
+		// longest accepted url would be refused before validation ran if the
+		// limit did not clear the url cap by the wrapper and its escaping.
+		BodyLimit:    deps.URLMaxLength + bodyLimitHeadroom,
+		ReadTimeout:  readTimeout,
+		WriteTimeout: writeTimeout,
+		IdleTimeout:  idleTimeout,
 		// Fiber hands request bytes out of a pool and reuses them once the
 		// handler returns, so every value read from a request would have to be
 		// copied by hand; this trades that footgun for one copy per read.

@@ -9,7 +9,7 @@ export const SHORT_CODE_PATTERN = /^[0-9A-Za-z]{12}$/;
 export const EXPIRY_PATTERN = /^Expires in \d+ (day|hour|minute)s? \u00B7 \d/;
 export const COPIED_MESSAGE = 'Copied to clipboard';
 export const TOAST_VISIBLE_CLASS = /(^|\s)on(\s|$)/;
-export const INVALID_URL_MESSAGE = 'the url must be an absolute http or https url';
+export const INVALID_URL_MESSAGE = 'the url must not contain whitespace';
 
 export function tab(page: Page, name: string): Locator {
     return page.getByRole('tab', { name });

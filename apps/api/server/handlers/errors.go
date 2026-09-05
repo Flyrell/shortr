@@ -24,7 +24,6 @@ func (e apiError) Error() string { return e.code }
 
 var (
 	errInvalidBody          = apiError{status: fiber.StatusBadRequest, code: "invalid_body", message: "the body must be a JSON object with a url field"}
-	errInvalidURL           = apiError{status: fiber.StatusBadRequest, code: "invalid_url", message: "the url must be an absolute http or https url"}
 	errForbidden            = apiError{status: fiber.StatusForbidden, code: "forbidden", message: "access to this resource is not allowed"}
 	errNotFound             = apiError{status: fiber.StatusNotFound, code: "not_found", message: "the requested resource does not exist"}
 	errMethodNotAllowed     = apiError{status: fiber.StatusMethodNotAllowed, code: "method_not_allowed", message: "the method is not allowed for this resource"}
@@ -66,9 +65,10 @@ func mapError(err error) apiError {
 	if errors.As(err, &api) {
 		return api
 	}
+	var invalidURL services.InvalidURLError
 	switch {
-	case errors.Is(err, services.ErrInvalidURL):
-		return errInvalidURL
+	case errors.As(err, &invalidURL):
+		return apiError{status: fiber.StatusBadRequest, code: "invalid_url", message: invalidURL.Message}
 	case errors.Is(err, services.ErrNotFound):
 		return errNotFound
 	}
