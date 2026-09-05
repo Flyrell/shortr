@@ -69,6 +69,37 @@ func TestFileAndAssets(t *testing.T) {
 	}
 }
 
+func TestIndex(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "index.html"), `<meta property="og:image" content="__BASE_URL__/og.png">`)
+
+	app := newApp()
+	app.Get("/", Index(dir, "https://sho.rt"))
+	app.Get("/missing", Index(t.TempDir(), "https://sho.rt"))
+
+	response := servertest.Do(t, app, httptest.NewRequest(http.MethodGet, "/", http.NoBody))
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("status = %d, want %d", response.StatusCode, http.StatusOK)
+	}
+	body, err := io.ReadAll(response.Body)
+	if err != nil {
+		t.Fatalf("ReadAll() error = %v", err)
+	}
+	if want := `<meta property="og:image" content="https://sho.rt/og.png">`; string(body) != want {
+		t.Errorf("body = %q, want %q", body, want)
+	}
+	if got := response.Header.Get(fiber.HeaderContentType); got != fiber.MIMETextHTMLCharsetUTF8 {
+		t.Errorf("Content-Type = %q, want %q", got, fiber.MIMETextHTMLCharsetUTF8)
+	}
+
+	response = servertest.Do(t, app, httptest.NewRequest(http.MethodGet, "/missing", http.NoBody))
+	if response.StatusCode != http.StatusNotFound {
+		t.Errorf("missing page status = %d, want %d", response.StatusCode, http.StatusNotFound)
+	}
+}
+
 func writeFile(t *testing.T, path, content string) {
 	t.Helper()
 

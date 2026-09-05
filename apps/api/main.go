@@ -51,6 +51,7 @@ func run() error {
 		Logger:          logger,
 		Shortener:       services.NewShortener(adapter, cfg.BaseURL, cfg.URLTTL),
 		Adapter:         adapter,
+		BaseURL:         cfg.BaseURL,
 		StaticDir:       cfg.StaticDir,
 		TrustedProxies:  cfg.TrustedProxies,
 		RateLimitWindow: cfg.RateLimitMode.Window(),

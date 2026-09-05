@@ -45,6 +45,9 @@ func TestRoutes(t *testing.T) {
 		{name: "index", method: http.MethodGet, path: "/", wantStatus: http.StatusOK},
 		{name: "robots", method: http.MethodGet, path: "/robots.txt", wantStatus: http.StatusOK},
 		{name: "favicon", method: http.MethodGet, path: "/favicon.svg", wantStatus: http.StatusOK},
+		{name: "favicon png", method: http.MethodGet, path: "/favicon.png", wantStatus: http.StatusOK},
+		{name: "touch icon", method: http.MethodGet, path: "/apple-touch-icon.png", wantStatus: http.StatusOK},
+		{name: "og image", method: http.MethodGet, path: "/og.png", wantStatus: http.StatusOK},
 		{name: "asset", method: http.MethodGet, path: "/assets/main.js", wantStatus: http.StatusOK},
 		{name: "missing asset", method: http.MethodGet, path: "/assets/missing.js", wantStatus: http.StatusNotFound},
 		{name: "shorten", method: http.MethodPost, path: "/api/shorten", contentType: fiber.MIMEApplicationJSON, body: shortenBody, wantStatus: http.StatusCreated},
@@ -119,6 +122,7 @@ func TestBotBlocking(t *testing.T) {
 		{name: "index", method: http.MethodGet, path: "/", wantStatus: http.StatusForbidden},
 		{name: "robots", method: http.MethodGet, path: "/robots.txt", wantStatus: http.StatusForbidden},
 		{name: "favicon", method: http.MethodGet, path: "/favicon.svg", wantStatus: http.StatusForbidden},
+		{name: "og image", method: http.MethodGet, path: "/og.png", wantStatus: http.StatusForbidden},
 		{name: "asset", method: http.MethodGet, path: "/assets/main.js", wantStatus: http.StatusForbidden},
 		{name: "shorten", method: http.MethodPost, path: "/api/shorten", wantStatus: http.StatusForbidden},
 		{name: "redirect", method: http.MethodGet, path: "/" + servertest.KnownCode, wantStatus: http.StatusFound},
@@ -215,6 +219,7 @@ func newTestApp(t *testing.T, stubs appStubs) *fiber.App {
 			Target:     redirectTarget,
 		},
 		Adapter:         servertest.StubPinger{Err: stubs.pingErr},
+		BaseURL:         "https://sho.rt",
 		StaticDir:       staticDir(t),
 		TrustedProxies:  stubs.trustedProxies,
 		RateLimitWindow: time.Minute,
@@ -226,7 +231,7 @@ func staticDir(t *testing.T) string {
 	t.Helper()
 
 	dir := t.TempDir()
-	for _, name := range []string{"index.html", "robots.txt", "favicon.svg", "assets/main.js"} {
+	for _, name := range append([]string{"index.html", "assets/main.js"}, rootFiles...) {
 		path := filepath.Join(dir, filepath.FromSlash(name))
 		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatalf("MkdirAll() error = %v", err)

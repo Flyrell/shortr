@@ -11,6 +11,21 @@
             name="description"
             content="shortr is a self-hosted URL shortener and QR code generator. A Go 1.27 API on Fiber v3 serves the API, the redirects and a plain TypeScript client from a single Docker image."
         />
+        <meta property="og:type" content="website" />
+        <meta property="og:title" content="shortr — URL shortener and QR code generator" />
+        <meta
+            property="og:description"
+            content="A self-hosted URL shortener and QR code generator. Long links in, short links out. Every link expires. Nothing to sign up for."
+        />
+        <meta property="og:url" content="https://flyrell.github.io/shortr/" />
+        <meta property="og:image" content="https://flyrell.github.io/shortr/og.png" />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:image:alt" content="The shortr mark and wordmark: long links in, short links out." />
+        <meta name="twitter:card" content="summary_large_image" />
+        <link rel="icon" href="favicon.png" type="image/png" sizes="32x32" />
+        <link rel="icon" href="favicon.svg" type="image/svg+xml" sizes="any" />
+        <link rel="apple-touch-icon" href="apple-touch-icon.png" />
         <link rel="stylesheet" href="styles.css" />
     </head>
     <body>
@@ -19,7 +34,13 @@
         <header class="hero">
             <div class="wrap">
                 <p class="eyebrow">Self-hosted · single image</p>
-                <h1 class="wordmark">shortr</h1>
+                <h1 class="wordmark">
+                    <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+                        <rect x="10.05" y="16.45" width="31.1" height="31.1" rx="5" fill="currentColor" transform="rotate(45 25.6 32)" />
+                        <rect x="22.85" y="16.45" width="31.1" height="31.1" rx="5" fill="var(--accent)" transform="rotate(45 38.4 32)" />
+                    </svg>
+                    shortr
+                </h1>
                 <p class="tagline">
                     Long links in, short links out. Every link expires. Nothing to sign up for.
                 </p>
@@ -97,7 +118,7 @@ task project:stop</code></pre>
                         </thead>
                         <tbody>
                             <tr><th scope="row"><code>PORT</code></th><td><code>8080</code></td><td>Integer between 1 and 65535.</td></tr>
-                            <tr><th scope="row"><code>BASE_URL</code></th><td><code>http://localhost:8080</code></td><td>Public origin used to build short links. http or https scheme with a host; trailing slashes stripped.</td></tr>
+                            <tr><th scope="row"><code>BASE_URL</code></th><td><code>http://localhost:8080</code></td><td>Public origin used to build short links and the client page's Open Graph URLs. http or https scheme with a host; trailing slashes stripped.</td></tr>
                             <tr><th scope="row"><code>STATIC_DIR</code></th><td><code>./apps/client/dist</code></td><td>Directory holding the built client. Must exist at startup.</td></tr>
                             <tr><th scope="row"><code>URL_TTL</code></th><td><code>30d</code></td><td>Link lifetime. Go duration syntax plus an <code>Nd</code> day suffix. Greater than zero.</td></tr>
                             <tr><th scope="row"><code>URL_PERSISTER</code></th><td><code>memory</code></td><td>Storage adapter: <code>memory</code> or <code>redis</code>.</td></tr>
@@ -173,10 +194,15 @@ task project:stop</code></pre>
                         </p>
                     </article>
                     <article class="route">
-                        <p class="route__line"><span class="verb">GET</span> <code>/</code>, <code>/robots.txt</code>, <code>/favicon.svg</code>, <code>/assets/*</code></p>
+                        <p class="route__line">
+                            <span class="verb">GET</span> <code>/</code>, <code>/robots.txt</code>, <code>/favicon.svg</code>,
+                            <code>/favicon.png</code>, <code>/apple-touch-icon.png</code>, <code>/og.png</code>,
+                            <code>/assets/*</code>
+                        </p>
                         <p>
                             The built client, served from <code>STATIC_DIR</code>; assets carry a one hour
-                            <code>max-age</code>. All bot filtered.
+                            <code>max-age</code>. <code>/</code> gets <code>BASE_URL</code> substituted into its
+                            Open Graph tags so link previews resolve. All bot filtered.
                         </p>
                     </article>
                 </div>

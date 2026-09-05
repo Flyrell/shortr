@@ -58,7 +58,7 @@ the variable.
 | Variable | Default | Rules |
 | --- | --- | --- |
 | `PORT` | `8080` | Integer between 1 and 65535. |
-| `BASE_URL` | `http://localhost:8080` | Public origin used to build short links. Must parse as a URL with an `http`/`https` scheme and a host. Trailing slashes are stripped. |
+| `BASE_URL` | `http://localhost:8080` | Public origin used to build short links and the client page's Open Graph URLs. Must parse as a URL with an `http`/`https` scheme and a host. Trailing slashes are stripped. |
 | `STATIC_DIR` | `./apps/client/dist` | Directory holding the built client. Must exist and be a directory at startup. |
 | `URL_TTL` | `30d` | How long a link lives. Go duration syntax (`12h`, `90m`, `30s`) plus an `Nd` day suffix. Must be greater than zero. |
 | `URL_PERSISTER` | `memory` | Storage adapter: `memory` or `redis`. Unknown names abort the start. |
@@ -135,8 +135,9 @@ so it works from probes with any user agent.
 
 ### Client files
 
-`GET /`, `GET /robots.txt`, `GET /favicon.svg` and `GET /assets/*` are served from `STATIC_DIR`; assets carry
-a one hour `max-age`. All four are bot filtered.
+`GET /`, `GET /robots.txt`, `GET /favicon.svg`, `GET /favicon.png`, `GET /apple-touch-icon.png`, `GET /og.png`
+and `GET /assets/*` are served from `STATIC_DIR`; assets carry a one hour `max-age`. `GET /` has `BASE_URL`
+substituted for `__BASE_URL__`, so the page's `og:url` and `og:image` are absolute. All are bot filtered.
 
 ## Client
 

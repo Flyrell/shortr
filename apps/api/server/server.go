@@ -20,10 +20,13 @@ const (
 	idleTimeout  = 60 * time.Second
 )
 
+var rootFiles = []string{"robots.txt", "favicon.svg", "favicon.png", "apple-touch-icon.png", "og.png"}
+
 type Deps struct {
 	Logger          *slog.Logger
 	Shortener       handlers.Shortener
 	Adapter         handlers.Pinger
+	BaseURL         string
 	StaticDir       string
 	TrustedProxies  []netip.Prefix
 	RateLimitWindow time.Duration
@@ -62,9 +65,10 @@ func New(deps *Deps) *fiber.App {
 	app.Get("/healthz", handlers.Health(deps.Adapter))
 
 	bots := middleware.BlockBots()
-	app.Get("/", bots, handlers.File(filepath.Join(deps.StaticDir, "index.html")))
-	app.Get("/robots.txt", bots, handlers.File(filepath.Join(deps.StaticDir, "robots.txt")))
-	app.Get("/favicon.svg", bots, handlers.File(filepath.Join(deps.StaticDir, "favicon.svg")))
+	app.Get("/", bots, handlers.Index(deps.StaticDir, deps.BaseURL))
+	for _, name := range rootFiles {
+		app.Get("/"+name, bots, handlers.File(filepath.Join(deps.StaticDir, name)))
+	}
 	app.Get("/assets/*", bots, handlers.Assets(filepath.Join(deps.StaticDir, "assets")))
 
 	api := app.Group("/api", bots, middleware.RateLimit(deps.RateLimitValue, deps.RateLimitWindow))

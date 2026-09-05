@@ -143,11 +143,20 @@ pre code {
 }
 
 .wordmark {
+    display: flex;
+    align-items: center;
+    gap: 0.2em;
     margin: 0;
     font-size: clamp(3rem, 12vw, 5rem);
     font-weight: 800;
     letter-spacing: -0.04em;
     line-height: 1;
+}
+
+.wordmark .mark {
+    flex: none;
+    width: 1.1em;
+    height: 1.1em;
 }
 
 .tagline {
