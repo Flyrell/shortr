@@ -172,6 +172,11 @@ pre code {
     color: var(--ink-muted);
 }
 
+.hero__run {
+    max-width: 36rem;
+    margin-top: 1.25rem;
+}
+
 .actions {
     display: flex;
     flex-wrap: wrap;
@@ -392,6 +397,88 @@ tbody th {
     white-space: nowrap;
 }
 
+/* Features */
+
+.features {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+    gap: 1rem;
+    margin-top: 1.25rem;
+}
+
+.feature {
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 1.1rem 1.25rem;
+    box-shadow: var(--shadow);
+}
+
+.feature h3 {
+    margin: 0 0 0.35rem;
+}
+
+.feature p {
+    margin: 0;
+    color: var(--ink-muted);
+    font-size: 0.9375rem;
+}
+
+/* Config groups */
+
+.config {
+    margin: 1.25rem 0;
+    background: var(--bg-panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    overflow: hidden;
+}
+
+.config__head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.85rem 1.25rem;
+    background: var(--accent-soft);
+    border-bottom: 1px solid var(--line);
+}
+
+.config__head h3 {
+    margin: 0;
+}
+
+.badge {
+    font-family: var(--mono);
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.15rem 0.45rem;
+    border-radius: 5px;
+    background: var(--accent);
+    color: var(--accent-ink);
+}
+
+.badge--ghost {
+    background: transparent;
+    color: var(--accent);
+    border: 1px solid var(--accent);
+}
+
+.config__scroll {
+    overflow-x: auto;
+}
+
+.config__note {
+    margin: 0;
+    padding: 0.85rem 1.25rem;
+    border-top: 1px solid var(--line);
+    color: var(--ink-muted);
+    font-size: 0.9375rem;
+}
+
 /* Footer */
 
 .footer {
@@ -413,7 +500,8 @@ tbody th {
     }
 
     .card,
-    .route {
+    .route,
+    .feature {
         padding: 1rem;
     }
 }
