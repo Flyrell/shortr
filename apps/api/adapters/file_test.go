@@ -1,22 +1,22 @@
 package adapters
 
 import (
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"testing/synctest"
 	"time"
+
+	bolt "go.etcd.io/bbolt"
 )
 
-func TestFileRestoresLinksAfterRestart(t *testing.T) {
+func TestFileKeepsLinksAcrossReopen(t *testing.T) {
 	t.Parallel()
 
 	ctx := t.Context()
 	clock := newTestClock()
-	path := filepath.Join(t.TempDir(), "shortr.json")
+	path := filepath.Join(t.TempDir(), "shortr.db")
 	overrides := map[string]string{"FILE_PATH": path}
 
 	first := newFileAdapter(t, clock.Now, overrides)
@@ -42,98 +42,86 @@ func TestFileRestoresLinksAfterRestart(t *testing.T) {
 	if _, err := second.FindURL(ctx, "zyx9876wvuts"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("FindURL() error = %v, want ErrNotFound for the expired code", err)
 	}
-	// The startup write drops what the load dropped, so an expired link is gone
-	// from the snapshot as well.
-	if codes := snapshotCodes(t, path); len(codes) != 1 || codes[0] != "abc1234defgh" {
-		t.Errorf("snapshot codes = %v, want only the live one", codes)
+}
+
+func TestFileRejectsATakenCodeUntilItExpires(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	clock := newTestClock()
+	adapter := newFileAdapter(t, clock.Now, nil)
+
+	if err := adapter.SaveURL(ctx, "abc1234defgh", "https://example.com", time.Hour); err != nil {
+		t.Fatalf("SaveURL() error = %v", err)
+	}
+	if err := adapter.SaveURL(ctx, "abc1234defgh", "https://other.example", time.Hour); !errors.Is(err, ErrCodeTaken) {
+		t.Fatalf("SaveURL() error = %v, want ErrCodeTaken", err)
+	}
+	clock.Advance(2 * time.Hour)
+	if err := adapter.SaveURL(ctx, "abc1234defgh", "https://other.example", time.Hour); err != nil {
+		t.Fatalf("SaveURL() after expiry error = %v", err)
 	}
 }
 
-func TestFileWritesOnItsTickerOnlyWhenLinksChanged(t *testing.T) {
-	// The bubble gives the ticker a fake clock, so the flushes happen without
-	// waiting on the wall clock.
+func TestFileReadsDoNotDeleteExpiredRecords(t *testing.T) {
+	t.Parallel()
+
+	ctx := t.Context()
+	clock := newTestClock()
+	adapter := newFileAdapter(t, clock.Now, nil)
+
+	if err := adapter.SaveURL(ctx, "abc1234defgh", "https://example.com", time.Hour); err != nil {
+		t.Fatalf("SaveURL() error = %v", err)
+	}
+	clock.Advance(2 * time.Hour)
+	if _, err := adapter.FindURL(ctx, "abc1234defgh"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("FindURL() error = %v, want ErrNotFound", err)
+	}
+	// The read filters the expired record but leaves removal to the sweeper.
+	if count := storedCount(t, adapter); count != 1 {
+		t.Errorf("stored records = %d, want the expired one still present", count)
+	}
+	if err := adapter.purge(); err != nil {
+		t.Fatalf("purge() error = %v", err)
+	}
+	if count := storedCount(t, adapter); count != 0 {
+		t.Errorf("stored records = %d, want the sweep to have removed it", count)
+	}
+}
+
+func TestFileSweepsExpiredRecordsOnItsTicker(t *testing.T) {
+	// The bubble drives the sweep ticker on a fake clock, so the entry expires
+	// and is swept without waiting on the wall clock.
 	synctest.Test(t, func(t *testing.T) {
 		ctx := t.Context()
-		path := filepath.Join(t.TempDir(), "shortr.json")
-		adapter := newFileAdapter(t, time.Now, map[string]string{"FILE_PATH": path, "FILE_SNAPSHOT_INTERVAL": "1s"})
+		adapter := newFileAdapter(t, time.Now, nil)
 
-		// Nothing was saved yet, so the ticker must leave the removed file alone.
-		if err := os.Remove(path); err != nil {
-			t.Fatalf("Remove() error = %v", err)
-		}
-		time.Sleep(2 * time.Second)
-		synctest.Wait()
-		if _, err := os.Stat(path); !os.IsNotExist(err) {
-			t.Fatalf("Stat() error = %v, want the snapshot to stay unwritten", err)
-		}
-
-		if err := adapter.SaveURL(ctx, "abc1234defgh", "https://example.com", time.Hour); err != nil {
+		if err := adapter.SaveURL(ctx, "abc1234defgh", "https://example.com", 30*time.Second); err != nil {
 			t.Fatalf("SaveURL() error = %v", err)
 		}
-		time.Sleep(2 * time.Second)
+		time.Sleep(2 * sweepInterval)
 		synctest.Wait()
 
-		if codes := snapshotCodes(t, path); len(codes) != 1 || codes[0] != "abc1234defgh" {
-			t.Errorf("snapshot codes = %v, want the saved code", codes)
+		if count := storedCount(t, adapter); count != 0 {
+			t.Errorf("stored records = %d, want the ticker to have emptied them", count)
 		}
 	})
 }
 
-func TestFileWritesOnClose(t *testing.T) {
+func TestNewFileReportsAnUnreadableDatabase(t *testing.T) {
 	t.Parallel()
 
-	path := filepath.Join(t.TempDir(), "shortr.json")
-	// An interval far beyond the test rules the ticker out of the result.
-	adapter := newFileAdapter(t, time.Now, map[string]string{"FILE_PATH": path, "FILE_SNAPSHOT_INTERVAL": "1h"})
-	if err := adapter.SaveURL(t.Context(), "abc1234defgh", "https://example.com", time.Hour); err != nil {
-		t.Fatalf("SaveURL() error = %v", err)
-	}
-	if err := adapter.Close(); err != nil {
-		t.Fatalf("Close() error = %v", err)
+	path := filepath.Join(t.TempDir(), "shortr.db")
+	if err := os.WriteFile(path, []byte("not a bolt database"), 0o600); err != nil {
+		t.Fatalf("WriteFile() error = %v", err)
 	}
 
-	if codes := snapshotCodes(t, path); len(codes) != 1 || codes[0] != "abc1234defgh" {
-		t.Errorf("snapshot codes = %v, want the saved code", codes)
+	adapter, err := NewFile(envFrom(map[string]string{"FILE_PATH": path}))
+	if err == nil {
+		t.Fatalf("NewFile() = %v, want an error", adapter)
 	}
-}
-
-func TestNewFileReportsEnvironmentErrors(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name     string
-		contents string
-		override map[string]string
-		want     string
-	}{
-		{name: "unparsable interval", override: map[string]string{"FILE_SNAPSHOT_INTERVAL": "soon"}, want: "FILE_SNAPSHOT_INTERVAL"},
-		{name: "interval below the minimum", override: map[string]string{"FILE_SNAPSHOT_INTERVAL": "10ms"}, want: "FILE_SNAPSHOT_INTERVAL"},
-		{name: "unreadable snapshot", contents: "{", want: "is not a snapshot"},
-		{name: "unknown snapshot version", contents: `{"version":2,"urls":{}}`, want: "snapshot version 2"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-
-			values := fileValues(t, test.override)
-			if test.contents != "" {
-				if err := os.WriteFile(values["FILE_PATH"], []byte(test.contents), 0o600); err != nil {
-					t.Fatalf("WriteFile() error = %v", err)
-				}
-			}
-
-			adapter, err := NewFile(envFrom(values))
-			if err == nil {
-				t.Fatalf("NewFile() = %v, want an error", adapter)
-			}
-			if !strings.Contains(err.Error(), test.want) {
-				t.Errorf("NewFile() error = %q, want it to mention %q", err, test.want)
-			}
-			if adapter != nil {
-				t.Errorf("NewFile() = %v, want nil", adapter)
-			}
-		})
+	if adapter != nil {
+		t.Errorf("NewFile() = %v, want nil", adapter)
 	}
 }
 
@@ -144,34 +132,42 @@ func TestNewFileReportsAnUnwritablePath(t *testing.T) {
 	if err := os.WriteFile(blocked, nil, 0o600); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
 	}
-	path := filepath.Join(blocked, "shortr.json")
+	path := filepath.Join(blocked, "shortr.db")
 
 	adapter, err := NewFile(envFrom(map[string]string{"FILE_PATH": path}))
 	if err == nil {
 		t.Fatalf("NewFile() = %v, want an error", adapter)
 	}
-	if !strings.Contains(err.Error(), path) && !strings.Contains(err.Error(), blocked) {
-		t.Errorf("NewFile() error = %q, want it to name the path", err)
+	if adapter != nil {
+		t.Errorf("NewFile() = %v, want nil", adapter)
 	}
 }
 
-func snapshotCodes(t *testing.T, path string) []string {
+func TestNewFileRefusesASecondOpener(t *testing.T) {
+	t.Parallel()
+
+	path := filepath.Join(t.TempDir(), "shortr.db")
+	first := newFileAdapter(t, time.Now, map[string]string{"FILE_PATH": path})
+	_ = first
+
+	adapter, err := NewFile(envFrom(map[string]string{"FILE_PATH": path}))
+	if err == nil {
+		t.Fatalf("NewFile() = %v, want an error while the database is held open", adapter)
+	}
+	if adapter != nil {
+		t.Errorf("NewFile() = %v, want nil", adapter)
+	}
+}
+
+func storedCount(t *testing.T, adapter *File) int {
 	t.Helper()
 
-	data, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatalf("ReadFile() error = %v", err)
+	var count int
+	if err := adapter.db.View(func(tx *bolt.Tx) error {
+		count = tx.Bucket(urlsBucket).Stats().KeyN
+		return nil
+	}); err != nil {
+		t.Fatalf("View() error = %v", err)
 	}
-	var snapshot fileSnapshot
-	if err := json.Unmarshal(data, &snapshot); err != nil {
-		t.Fatalf("Unmarshal() error = %v", err)
-	}
-	if snapshot.Version != fileVersion {
-		t.Errorf("snapshot version = %d, want %d", snapshot.Version, fileVersion)
-	}
-	codes := make([]string, 0, len(snapshot.URLs))
-	for code := range snapshot.URLs {
-		codes = append(codes, code)
-	}
-	return codes
+	return count
 }

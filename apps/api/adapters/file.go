@@ -2,107 +2,132 @@ package adapters
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/binary"
 	"errors"
 	"fmt"
-	"io/fs"
 	"log/slog"
-	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
+
+	bolt "go.etcd.io/bbolt"
+	bolterrors "go.etcd.io/bbolt/errors"
 )
 
 const (
-	defaultFilePath         = "/data/shortr.json"
-	defaultFileInterval     = 10 * time.Second
-	minimumFileInterval     = time.Second
-	fileVersion             = 1
+	defaultFilePath         = "/data/shortr.db"
+	fileOpenTimeout         = 2 * time.Second
+	fileMode                = 0o600
 	fileDirectoryPermission = 0o750
+	// The value is an 8 byte big-endian expiry stamp followed by the target, so
+	// a read compares the stamp without decoding the whole record.
+	expiryWidth = 8
 )
 
-var _ Adapter = (*File)(nil)
+var (
+	_ Adapter = (*File)(nil)
 
-// File is the memory adapter with a snapshot on disk behind it: it reads one at
-// startup and rewrites it whenever the links changed, so a restart keeps them.
+	urlsBucket = []byte("urls")
+)
+
+// File keeps every link in a bbolt database on disk: a lookup walks the B+tree
+// for one code instead of holding the whole set in memory.
 type File struct {
-	*Memory
-
-	path     string
-	interval time.Duration
-	dirty    atomic.Bool
+	db  *bolt.DB
+	now clock
 
 	stop      chan struct{}
-	flusher   sync.WaitGroup
+	sweeper   sync.WaitGroup
 	closeOnce sync.Once
 	closeErr  error
-}
-
-type fileEntry struct {
-	Target    string    `json:"target"`
-	ExpiresAt time.Time `json:"expiresAt"`
-}
-
-type fileSnapshot struct {
-	Version int                  `json:"version"`
-	URLs    map[string]fileEntry `json:"urls"`
 }
 
 func NewFile(env Env) (*File, error) { return newFile(env, time.Now) }
 
 func newFile(env Env, now clock) (*File, error) {
 	path := fileVar(env, "FILE_PATH", defaultFilePath)
-	interval, err := fileIntervalVar(env, "FILE_SNAPSHOT_INTERVAL", defaultFileInterval)
+	if err := os.MkdirAll(filepath.Dir(path), fileDirectoryPermission); err != nil {
+		return nil, fmt.Errorf("file: create %q: %w", filepath.Dir(path), err)
+	}
+	// The open takes an exclusive lock, so a second process fails here rather
+	// than corrupting the database; the timeout turns that into a prompt error.
+	db, err := bolt.Open(path, fileMode, &bolt.Options{Timeout: fileOpenTimeout})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("file: open %q: %w", path, err)
 	}
-	urls, err := readSnapshot(path, now())
-	if err != nil {
-		return nil, err
+	if err := db.Update(func(tx *bolt.Tx) error {
+		_, err := tx.CreateBucketIfNotExists(urlsBucket)
+		return err
+	}); err != nil {
+		return nil, errors.Join(fmt.Errorf("file: prepare %q: %w", path, err), db.Close())
 	}
-	// Writing the loaded links straight back turns an unwritable path into a
-	// startup failure instead of a snapshot that quietly stops being updated.
-	if err := writeSnapshot(path, urls); err != nil {
-		return nil, err
-	}
-	memory := newMemory(now)
-	memory.mu.Lock()
-	memory.urls = urls
-	memory.mu.Unlock()
 
-	file := &File{Memory: memory, path: path, interval: interval, stop: make(chan struct{})}
-	file.flusher.Add(1)
-	go file.flush()
+	file := &File{db: db, now: now, stop: make(chan struct{})}
+	file.sweeper.Add(1)
+	go file.sweep()
 	return file, nil
 }
 
 func (f *File) SaveURL(ctx context.Context, code, target string, ttl time.Duration) error {
-	if err := f.Memory.SaveURL(ctx, code, target, ttl); err != nil {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
-	f.dirty.Store(true)
-	return nil
+	if ttl <= 0 {
+		return errInvalidTTL
+	}
+	now := f.now()
+	err := f.db.Update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket(urlsBucket)
+		if existing := bucket.Get([]byte(code)); existing != nil && !expiredRecord(existing, now) {
+			return ErrCodeTaken
+		}
+		return bucket.Put([]byte(code), encodeRecord(target, now.Add(ttl)))
+	})
+	return f.mapErr(err)
+}
+
+func (f *File) FindURL(ctx context.Context, code string) (string, error) {
+	if err := ctx.Err(); err != nil {
+		return "", err
+	}
+	now := f.now()
+	var target string
+	err := f.db.View(func(tx *bolt.Tx) error {
+		record := tx.Bucket(urlsBucket).Get([]byte(code))
+		if record == nil || expiredRecord(record, now) {
+			return ErrNotFound
+		}
+		target = string(record[expiryWidth:])
+		return nil
+	})
+	if err != nil {
+		return "", f.mapErr(err)
+	}
+	return target, nil
+}
+
+func (f *File) Ping(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return f.mapErr(f.db.View(func(*bolt.Tx) error { return nil }))
 }
 
 func (f *File) Close() error {
 	f.closeOnce.Do(func() {
 		close(f.stop)
-		f.flusher.Wait()
-		f.closeErr = f.snapshot()
+		f.sweeper.Wait()
+		f.closeErr = f.db.Close()
 	})
-	if err := f.Memory.Close(); err != nil {
-		return err
-	}
 	return f.closeErr
 }
 
-func (f *File) flush() {
-	defer f.flusher.Done()
+func (f *File) sweep() {
+	defer f.sweeper.Done()
 
-	ticker := time.NewTicker(f.interval)
+	ticker := time.NewTicker(sweepInterval)
 	defer ticker.Stop()
 
 	for {
@@ -110,91 +135,58 @@ func (f *File) flush() {
 		case <-f.stop:
 			return
 		case <-ticker.C:
-			if !f.dirty.Swap(false) {
-				continue
-			}
-			if err := f.snapshot(); err != nil {
-				f.dirty.Store(true)
-				slog.Error("writing the url snapshot failed", "path", f.path, "error", err)
+			// Expired records are filtered on read regardless, so a failed sweep
+			// is logged and left for the next tick rather than stopping it.
+			if err := f.purge(); err != nil {
+				slog.Error("sweeping expired links failed", "error", err)
 			}
 		}
 	}
 }
 
-func (f *File) snapshot() error {
-	f.mu.Lock()
-	urls := maps.Clone(f.urls)
-	f.mu.Unlock()
-
-	return writeSnapshot(f.path, urls)
-}
-
-func writeSnapshot(path string, urls map[string]urlEntry) error {
-	entries := make(map[string]fileEntry, len(urls))
-	for code, entry := range urls {
-		entries[code] = fileEntry{Target: entry.target, ExpiresAt: entry.expiresAt}
-	}
-	data, err := json.Marshal(fileSnapshot{Version: fileVersion, URLs: entries})
-	if err != nil {
-		return fmt.Errorf("file: encode the snapshot: %w", err)
-	}
-	return writeFile(path, data)
-}
-
-// The bytes reach the disk under a temporary name and are published with a
-// rename, so an interrupted write leaves the previous snapshot whole.
-func writeFile(path string, data []byte) error {
-	directory := filepath.Dir(path)
-	if err := os.MkdirAll(directory, fileDirectoryPermission); err != nil {
-		return fmt.Errorf("file: create %q: %w", directory, err)
-	}
-	temporary, err := os.CreateTemp(directory, filepath.Base(path)+".*")
-	if err != nil {
-		return fmt.Errorf("file: create a temporary file in %q: %w", directory, err)
-	}
-	if err = writeAndSync(temporary, data); err == nil {
-		err = os.Rename(temporary.Name(), path)
-	}
-	if err != nil {
-		return errors.Join(fmt.Errorf("file: write %q: %w", path, err), os.Remove(temporary.Name()))
-	}
-	return nil
-}
-
-func writeAndSync(file *os.File, data []byte) error {
-	if _, err := file.Write(data); err != nil {
-		return errors.Join(err, file.Close())
-	}
-	if err := file.Sync(); err != nil {
-		return errors.Join(err, file.Close())
-	}
-	return file.Close()
-}
-
-func readSnapshot(path string, now time.Time) (map[string]urlEntry, error) {
-	// The path is operator configuration, not anything a request can reach.
-	data, err := os.ReadFile(path) //nolint:gosec // the path comes from FILE_PATH
-	if errors.Is(err, fs.ErrNotExist) {
-		return make(map[string]urlEntry), nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("file: read %q: %w", path, err)
-	}
-	var snapshot fileSnapshot
-	if err := json.Unmarshal(data, &snapshot); err != nil {
-		return nil, fmt.Errorf("file: %q is not a snapshot: %w", path, err)
-	}
-	if snapshot.Version != fileVersion {
-		return nil, fmt.Errorf("file: %q has snapshot version %d, want %d", path, snapshot.Version, fileVersion)
-	}
-	urls := make(map[string]urlEntry, len(snapshot.URLs))
-	for code, entry := range snapshot.URLs {
-		if expired(entry.ExpiresAt, now) {
-			continue
+func (f *File) purge() error {
+	now := f.now()
+	return f.mapErr(f.db.Update(func(tx *bolt.Tx) error {
+		bucket := tx.Bucket(urlsBucket)
+		var expired [][]byte
+		if err := bucket.ForEach(func(code, record []byte) error {
+			if expiredRecord(record, now) {
+				expired = append(expired, append([]byte(nil), code...))
+			}
+			return nil
+		}); err != nil {
+			return err
 		}
-		urls[code] = urlEntry{target: entry.Target, expiresAt: entry.ExpiresAt}
+		for _, code := range expired {
+			if err := bucket.Delete(code); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+}
+
+func (f *File) mapErr(err error) error {
+	if errors.Is(err, bolterrors.ErrDatabaseNotOpen) {
+		return errClosed
 	}
-	return urls, nil
+	return err
+}
+
+func encodeRecord(target string, expiresAt time.Time) []byte {
+	record := make([]byte, expiryWidth+len(target))
+	binary.BigEndian.PutUint64(record, uint64(expiresAt.UnixNano()))
+	copy(record[expiryWidth:], target)
+	return record
+}
+
+func expiredRecord(record []byte, now time.Time) bool {
+	if len(record) < expiryWidth {
+		return true
+	}
+	// The stamp was written from a UnixNano int64, so the reverse cast round-trips it.
+	expiresAt := int64(binary.BigEndian.Uint64(record)) //nolint:gosec // round-trips a UnixNano stamp
+	return expiresAt <= now.UnixNano()
 }
 
 func fileVar(env Env, name, fallback string) string {
@@ -204,19 +196,4 @@ func fileVar(env Env, name, fallback string) string {
 		}
 	}
 	return fallback
-}
-
-func fileIntervalVar(env Env, name string, fallback time.Duration) (time.Duration, error) {
-	raw := fileVar(env, name, "")
-	if raw == "" {
-		return fallback, nil
-	}
-	interval, err := time.ParseDuration(raw)
-	if err != nil {
-		return 0, fmt.Errorf("file: %s must be a duration such as 10s or 2m, got %q", name, raw)
-	}
-	if interval < minimumFileInterval {
-		return 0, fmt.Errorf("file: %s must be at least %s, got %q", name, minimumFileInterval, raw)
-	}
-	return interval, nil
 }

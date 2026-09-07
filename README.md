@@ -133,18 +133,49 @@ No variables. Links live in the process: they vanish on restart and are not shar
 
 ### Storage — `file`
 
-Set `URL_PERSISTER=file` and mount a volume on the directory holding the snapshot, then:
+Set `URL_PERSISTER=file` and mount a volume on the directory holding the database, then:
 
 | Variable | Default | Rules |
 | --- | --- | --- |
-| `FILE_PATH` | `/data/shortr.json` | Snapshot file, written `0600`. Missing directories are created; the image ships `/data` owned by the container user. |
-| `FILE_SNAPSHOT_INTERVAL` | `10s` | How often changed links are written. Go duration syntax, at least `1s`. |
+| `FILE_PATH` | `/data/shortr.db` | Embedded database file, created `0600`. Missing directories are created; the image ships `/data` owned by the container user. |
 
-Links live in the process exactly as with `memory`. On top of that the snapshot is read at startup, dropping
-whatever expired while the process was down, rewritten at most once per interval and only when a link was
-added, and written once more on shutdown. Each write lands in a temporary file that is renamed into place, so
-an interrupted one leaves the previous snapshot whole. A `SIGKILL` costs at most one interval of links, a
-graceful stop costs none. Still one process only: the snapshot is not shared between replicas.
+Links live in an embedded [bbolt](https://github.com/etcd-io/bbolt) database at `FILE_PATH`, one file on
+disk. A lookup reads a single key from its B+tree, so the link set is **not** held in memory and stays flat
+regardless of how many links exist. Each shorten is one transaction, durable the moment it returns — a
+`SIGKILL` loses nothing. Expiry is checked on every read and a background sweep drops expired keys each
+minute. The database is opened under an exclusive lock, so exactly one process may hold it; a second start
+fails fast rather than corrupting the file. That also means it is not shared between replicas — use `redis`
+for more than one process.
+
+To survive restarts the file must outlive the container, so put it on a volume (or a bind mount):
+
+```sh
+docker run -d --name shortr -p 8080:8080 \
+  -v shortr-data:/data -e URL_PERSISTER=file \
+  dawidzbinski/shortr:latest
+```
+
+Or in Compose:
+
+```yaml
+services:
+    shortr:
+        image: dawidzbinski/shortr:latest
+        restart: unless-stopped
+        ports:
+            - '8080:8080'
+        environment:
+            BASE_URL: https://s.example.com
+            URL_PERSISTER: file
+        volumes:
+            - shortr-data:/data
+
+volumes:
+    shortr-data:
+```
+
+Back it up by copying `shortr.db` while the container is stopped, or with bbolt's own snapshot; a plain file
+copy of a running database can be torn.
 
 ### Storage — `redis`
 
@@ -230,9 +261,8 @@ runtime.
 
 - **Codes** are 12 characters of `[0-9A-Za-z]` from `crypto/rand`, drawn without modulo bias — ~71 bits, so
   links cannot be enumerated.
-- **Everything expires** after `URL_TTL`. Redis expires its own keys; the memory and file adapters expire on
-  read and sweep in the background, and the file adapter drops what expired while it was down as it reads its
-  snapshot.
+- **Everything expires** after `URL_TTL`. Redis expires its own keys; the memory and file adapters check
+  expiry on every read and sweep the expired ones in the background.
 - **Not indexable** — `X-Robots-Tag: noindex, nofollow, noarchive` on every response, a `robots.txt` that
   disallows everything, and `403` for known crawler user agents on the client and the API. Redirects and
   `/healthz` stay open.

@@ -60,7 +60,7 @@ func newRedisAdapter(t *testing.T) (*Redis, *miniredis.Miniredis) {
 func fileValues(t *testing.T, overrides map[string]string) map[string]string {
 	t.Helper()
 
-	values := map[string]string{"FILE_PATH": filepath.Join(t.TempDir(), "shortr.json")}
+	values := map[string]string{"FILE_PATH": filepath.Join(t.TempDir(), "shortr.db")}
 	maps.Copy(values, overrides)
 	return values
 }

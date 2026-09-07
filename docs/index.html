@@ -251,19 +251,19 @@ volumes:
                                 <tr><th scope="col">Variable</th><th scope="col">Default</th><th scope="col">Rules</th></tr>
                             </thead>
                             <tbody>
-                                <tr><th scope="row"><code>FILE_PATH</code></th><td><code>/data/shortr.json</code></td><td>Snapshot file, written <code>0600</code>. Missing directories are created; the image ships <code>/data</code> owned by the container user.</td></tr>
-                                <tr><th scope="row"><code>FILE_SNAPSHOT_INTERVAL</code></th><td><code>10s</code></td><td>How often changed links are written. Go duration syntax, at least <code>1s</code>.</td></tr>
+                                <tr><th scope="row"><code>FILE_PATH</code></th><td><code>/data/shortr.db</code></td><td>Embedded database file, created <code>0600</code>. Missing directories are created; the image ships <code>/data</code> owned by the container user.</td></tr>
                             </tbody>
                         </table>
                     </div>
                     <p class="config__note">
-                        Links live in the process exactly as with <code>memory</code>. On top of that the snapshot
-                        is read at startup, dropping whatever expired while the process was down, rewritten at
-                        most once per interval and only when a link was added, and written once more on shutdown.
-                        Each write lands in a temporary file that is renamed into place, so an interrupted one
-                        leaves the previous snapshot whole. A <code>SIGKILL</code> costs at most one interval of
-                        links, a graceful stop costs none. Still one process only: the snapshot is not shared
-                        between replicas.
+                        Links live in an embedded <a href="https://github.com/etcd-io/bbolt">bbolt</a> database at
+                        <code>FILE_PATH</code>, one file on disk. A lookup reads a single key from its B+tree, so the
+                        link set is not held in memory and stays flat however many links exist. Each shorten is one
+                        transaction, durable the moment it returns, so a <code>SIGKILL</code> loses nothing. Expiry
+                        is checked on every read and a background sweep drops expired keys each minute. The database
+                        opens under an exclusive lock — exactly one process may hold it, so it is not shared between
+                        replicas; use <code>redis</code> for more than one. Mount a volume on the directory so the
+                        file outlives the container.
                     </p>
                 </div>
 
@@ -367,7 +367,7 @@ volumes:
                 <h2>Security</h2>
                 <ul class="list">
                     <li><strong>Codes</strong> are 12 characters of <code>[0-9A-Za-z]</code> from <code>crypto/rand</code> without modulo bias — around 71 bits, so links cannot be enumerated.</li>
-                    <li><strong>Everything expires</strong> after <code>URL_TTL</code>. Redis expires its own keys; the memory and file adapters expire on read and sweep in the background, and the file adapter drops what expired while it was down as it reads its snapshot.</li>
+                    <li><strong>Everything expires</strong> after <code>URL_TTL</code>. Redis expires its own keys; the memory and file adapters check expiry on every read and sweep the expired ones in the background.</li>
                     <li><strong>Not indexable</strong> — <code>X-Robots-Tag: noindex, nofollow, noarchive</code> on every response, a <code>robots.txt</code> that disallows everything, and <code>403</code> for known crawler user agents. Redirects and <code>/healthz</code> stay open.</li>
                     <li><strong>Headers</strong> — strict CSP (<code>default-src 'self'</code>, no inline scripts or styles, <code>frame-ancestors 'none'</code>), <code>nosniff</code>, <code>X-Frame-Options: DENY</code>, <code>Referrer-Policy: no-referrer</code>.</li>
                     <li><strong>Input limits</strong> — URLs capped at <code>URL_MAX_LENGTH</code>, bodies at that plus 1024 bytes. URLs with whitespace, control characters or embedded credentials are rejected.</li>
