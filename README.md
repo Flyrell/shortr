@@ -20,7 +20,8 @@ docker run -d -p 8080:8080 dawidzbinski/shortr:latest
 - **QR codes** — the same short link as a QR, copied to the clipboard as a PNG.
 - **Expires** — every link dies after `URL_TTL`, 30 days by default. Nothing to prune.
 - **Stays private** — no sign-up, no analytics, no cookies. Everything is `noindex`, crawlers get `403`.
-- **Runs anywhere** — a ~15 MB distroless image for `amd64`, `arm64` and `armv7`. Redis optional.
+- **Runs anywhere** — a ~15 MB distroless image for `amd64`, `arm64` and `armv7`. A mounted volume or Redis
+  keeps the links; neither is required.
 
 Free for noncommercial use — see [License](#license).
 
@@ -33,7 +34,15 @@ docker run -d --name shortr -p 8080:8080 dawidzbinski/shortr:latest
 ```
 
 Open <http://localhost:8080>. Links are held in the process and lost on restart, which is fine for a trial.
-For anything real, add Redis.
+To keep them, mount a volume and switch the adapter:
+
+```sh
+docker run -d --name shortr -p 8080:8080 \
+  -v shortr-data:/data -e URL_PERSISTER=file \
+  dawidzbinski/shortr:latest
+```
+
+That is the whole story for one container. Run more than one and they need Redis.
 
 ### Docker Compose, with Redis
 
@@ -83,7 +92,7 @@ docker compose up -d
 | **TLS** | Terminate at your proxy. shortr speaks plain HTTP on `PORT`. |
 | **Behind a proxy** | Set `TRUSTED_PROXIES` to the proxy's CIDRs. Without it `X-Forwarded-For` is ignored and every client shares one rate-limit bucket. |
 | **Health checks** | Probe `GET /healthz` from outside the container — the image has no shell, so in-container checks cannot run. |
-| **Persistence** | `URL_PERSISTER=redis`. The memory adapter is per-process, so it also rules out a second replica. |
+| **Persistence** | One container: `URL_PERSISTER=file` and a volume on `/data`. More than one: `URL_PERSISTER=redis`. The default `memory` adapter keeps nothing across a restart. |
 | **Rate limits** | `RATE_LIMIT_MODE` and `RATE_LIMIT_VALUE`, per client IP, on `/api` only. Counters are per process. |
 | **Upgrades** | `docker compose pull && docker compose up -d`. |
 
@@ -111,7 +120,7 @@ naming the variable; an empty one falls back to the default.
 | `PORT` | `8080` | 1–65535. |
 | `URL_TTL` | `30d` | Link lifetime. Go duration syntax (`12h`, `90m`) plus an `Nd` day suffix. Greater than zero. |
 | `URL_MAX_LENGTH` | `4096` | Longest target URL in bytes, 256–65536. The body cap follows it, plus 1024 bytes for the JSON wrapper. |
-| `URL_PERSISTER` | `memory` | Storage adapter: `memory` or `redis`. Unknown names abort the start. |
+| `URL_PERSISTER` | `memory` | Storage adapter: `memory`, `file` or `redis`. Unknown names abort the start. |
 | `RATE_LIMIT_MODE` | `day` | Window: `second`, `minute`, `hour` or `day`. |
 | `RATE_LIMIT_VALUE` | `30` | Requests per window per client IP. At least 1. |
 | `TRUSTED_PROXIES` | *(empty)* | Comma separated CIDRs. Empty means `X-Forwarded-For` is ignored. |
@@ -121,6 +130,21 @@ naming the variable; an empty one falls back to the default.
 ### Storage — `memory` *(default)*
 
 No variables. Links live in the process: they vanish on restart and are not shared between replicas.
+
+### Storage — `file`
+
+Set `URL_PERSISTER=file` and mount a volume on the directory holding the snapshot, then:
+
+| Variable | Default | Rules |
+| --- | --- | --- |
+| `FILE_PATH` | `/data/shortr.json` | Snapshot file, written `0600`. Missing directories are created; the image ships `/data` owned by the container user. |
+| `FILE_SNAPSHOT_INTERVAL` | `10s` | How often changed links are written. Go duration syntax, at least `1s`. |
+
+Links live in the process exactly as with `memory`. On top of that the snapshot is read at startup, dropping
+whatever expired while the process was down, rewritten at most once per interval and only when a link was
+added, and written once more on shutdown. Each write lands in a temporary file that is renamed into place, so
+an interrupted one leaves the previous snapshot whole. A `SIGKILL` costs at most one interval of links, a
+graceful stop costs none. Still one process only: the snapshot is not shared between replicas.
 
 ### Storage — `redis`
 
@@ -205,8 +229,9 @@ runtime.
 
 - **Codes** are 12 characters of `[0-9A-Za-z]` from `crypto/rand`, drawn without modulo bias — ~71 bits, so
   links cannot be enumerated.
-- **Everything expires** after `URL_TTL`. Redis expires its own keys; the memory adapter expires on read and
-  sweeps in the background.
+- **Everything expires** after `URL_TTL`. Redis expires its own keys; the memory and file adapters expire on
+  read and sweep in the background, and the file adapter drops what expired while it was down as it reads its
+  snapshot.
 - **Not indexable** — `X-Robots-Tag: noindex, nofollow, noarchive` on every response, a `robots.txt` that
   disallows everything, and `403` for known crawler user agents on the client and the API. Redirects and
   `/healthz` stay open.

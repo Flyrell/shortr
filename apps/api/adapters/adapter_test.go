@@ -11,13 +11,14 @@ func TestNew(t *testing.T) {
 	t.Parallel()
 
 	server := newRedisServer(t)
-	env := envFrom(redisValues(server, nil))
+	env := envFrom(redisValues(server, fileValues(t, nil)))
 
 	tests := []struct {
 		name    string
 		matches func(Adapter) bool
 	}{
 		{name: "memory", matches: func(a Adapter) bool { _, ok := a.(*Memory); return ok }},
+		{name: "file", matches: func(a Adapter) bool { _, ok := a.(*File); return ok }},
 		{name: "redis", matches: func(a Adapter) bool { _, ok := a.(*Redis); return ok }},
 		{name: "postgres"},
 	}
@@ -116,5 +117,5 @@ func contractAdapters(t *testing.T) map[string]Adapter {
 		}
 	})
 	redis, _ := newRedisAdapter(t)
-	return map[string]Adapter{"memory": memory, "redis": redis}
+	return map[string]Adapter{"memory": memory, "file": newFileAdapter(t, time.Now, nil), "redis": redis}
 }

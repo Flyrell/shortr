@@ -92,7 +92,7 @@
                     </article>
                     <article class="feature">
                         <h3>Runs anywhere</h3>
-                        <p>A ~15&nbsp;MB distroless image for amd64, arm64 and armv7. Redis optional.</p>
+                        <p>A ~15&nbsp;MB distroless image for amd64, arm64 and armv7. A mounted volume or Redis keeps the links; neither is required.</p>
                     </article>
                     <article class="feature">
                         <h3>Yours</h3>
@@ -111,7 +111,15 @@
   dawidzbinski/shortr:latest</code></pre>
                         <p class="note">
                             Serves <code>http://localhost:8080</code>. Links are held in the process and lost on
-                            restart — fine for a trial, add Redis for anything real.
+                            restart — fine for a trial. To keep them, mount a volume and switch the adapter:
+                        </p>
+                        <pre><code>docker run -d --name shortr \
+  -p 8080:8080 \
+  -v shortr-data:/data \
+  -e URL_PERSISTER=file \
+  dawidzbinski/shortr:latest</code></pre>
+                        <p class="note">
+                            That is the whole story for one container. Run more than one and they need Redis.
                         </p>
                     </article>
                     <article class="card">
@@ -165,7 +173,7 @@ volumes:
                             <tr><th scope="row">TLS</th><td>Terminate at your proxy. shortr speaks plain HTTP on <code>PORT</code>.</td></tr>
                             <tr><th scope="row">Behind a proxy</th><td>Set <code>TRUSTED_PROXIES</code> to the proxy's CIDRs, or <code>X-Forwarded-For</code> is ignored and every client shares one rate-limit bucket.</td></tr>
                             <tr><th scope="row">Health checks</th><td>Probe <code>GET /healthz</code> from outside the container — the image has no shell.</td></tr>
-                            <tr><th scope="row">Persistence</th><td><code>URL_PERSISTER=redis</code>. The memory adapter is per-process, so it also rules out a second replica.</td></tr>
+                            <tr><th scope="row">Persistence</th><td>One container: <code>URL_PERSISTER=file</code> and a volume on <code>/data</code>. More than one: <code>URL_PERSISTER=redis</code>. The default <code>memory</code> adapter keeps nothing across a restart.</td></tr>
                             <tr><th scope="row">Rate limits</th><td><code>RATE_LIMIT_MODE</code> and <code>RATE_LIMIT_VALUE</code>, per client IP, on <code>/api</code> only.</td></tr>
                             <tr><th scope="row">Upgrades</th><td><code>docker compose pull &amp;&amp; docker compose up -d</code>.</td></tr>
                         </tbody>
@@ -210,7 +218,7 @@ volumes:
                                 <tr><th scope="row"><code>PORT</code></th><td><code>8080</code></td><td>1–65535.</td></tr>
                                 <tr><th scope="row"><code>URL_TTL</code></th><td><code>30d</code></td><td>Link lifetime. Go duration syntax plus an <code>Nd</code> day suffix. Greater than zero.</td></tr>
                                 <tr><th scope="row"><code>URL_MAX_LENGTH</code></th><td><code>4096</code></td><td>Longest target URL in bytes, 256–65536. The body cap follows it, plus 1024 bytes.</td></tr>
-                                <tr><th scope="row"><code>URL_PERSISTER</code></th><td><code>memory</code></td><td>Storage adapter: <code>memory</code> or <code>redis</code>.</td></tr>
+                                <tr><th scope="row"><code>URL_PERSISTER</code></th><td><code>memory</code></td><td>Storage adapter: <code>memory</code>, <code>file</code> or <code>redis</code>.</td></tr>
                                 <tr><th scope="row"><code>RATE_LIMIT_MODE</code></th><td><code>day</code></td><td><code>second</code>, <code>minute</code>, <code>hour</code> or <code>day</code>.</td></tr>
                                 <tr><th scope="row"><code>RATE_LIMIT_VALUE</code></th><td><code>30</code></td><td>Requests per window per client IP. At least 1.</td></tr>
                                 <tr><th scope="row"><code>TRUSTED_PROXIES</code></th><td><em>empty</em></td><td>Comma separated CIDRs. Empty means <code>X-Forwarded-For</code> is ignored.</td></tr>
@@ -228,6 +236,33 @@ volumes:
                     </div>
                     <p class="config__note">
                         No variables. Links live in the process: they vanish on restart and are not shared
+                        between replicas.
+                    </p>
+                </div>
+
+                <div class="config">
+                    <div class="config__head">
+                        <h3>Storage — <code>file</code></h3>
+                        <span class="badge badge--ghost">URL_PERSISTER=file</span>
+                    </div>
+                    <div class="config__scroll">
+                        <table>
+                            <thead>
+                                <tr><th scope="col">Variable</th><th scope="col">Default</th><th scope="col">Rules</th></tr>
+                            </thead>
+                            <tbody>
+                                <tr><th scope="row"><code>FILE_PATH</code></th><td><code>/data/shortr.json</code></td><td>Snapshot file, written <code>0600</code>. Missing directories are created; the image ships <code>/data</code> owned by the container user.</td></tr>
+                                <tr><th scope="row"><code>FILE_SNAPSHOT_INTERVAL</code></th><td><code>10s</code></td><td>How often changed links are written. Go duration syntax, at least <code>1s</code>.</td></tr>
+                            </tbody>
+                        </table>
+                    </div>
+                    <p class="config__note">
+                        Links live in the process exactly as with <code>memory</code>. On top of that the snapshot
+                        is read at startup, dropping whatever expired while the process was down, rewritten at
+                        most once per interval and only when a link was added, and written once more on shutdown.
+                        Each write lands in a temporary file that is renamed into place, so an interrupted one
+                        leaves the previous snapshot whole. A <code>SIGKILL</code> costs at most one interval of
+                        links, a graceful stop costs none. Still one process only: the snapshot is not shared
                         between replicas.
                     </p>
                 </div>
@@ -330,7 +365,7 @@ volumes:
                 <h2>Security</h2>
                 <ul class="list">
                     <li><strong>Codes</strong> are 12 characters of <code>[0-9A-Za-z]</code> from <code>crypto/rand</code> without modulo bias — around 71 bits, so links cannot be enumerated.</li>
-                    <li><strong>Everything expires</strong> after <code>URL_TTL</code>. Redis expires its own keys; the memory adapter expires on read and sweeps in the background.</li>
+                    <li><strong>Everything expires</strong> after <code>URL_TTL</code>. Redis expires its own keys; the memory and file adapters expire on read and sweep in the background, and the file adapter drops what expired while it was down as it reads its snapshot.</li>
                     <li><strong>Not indexable</strong> — <code>X-Robots-Tag: noindex, nofollow, noarchive</code> on every response, a <code>robots.txt</code> that disallows everything, and <code>403</code> for known crawler user agents. Redirects and <code>/healthz</code> stay open.</li>
                     <li><strong>Headers</strong> — strict CSP (<code>default-src 'self'</code>, no inline scripts or styles, <code>frame-ancestors 'none'</code>), <code>nosniff</code>, <code>X-Frame-Options: DENY</code>, <code>Referrer-Policy: no-referrer</code>.</li>
                     <li><strong>Input limits</strong> — URLs capped at <code>URL_MAX_LENGTH</code>, bodies at that plus 1024 bytes. URLs with whitespace, control characters or embedded credentials are rejected.</li>

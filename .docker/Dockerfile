@@ -26,11 +26,15 @@ COPY apps/api/go.mod apps/api/go.sum ./
 RUN go mod download
 COPY apps/api ./
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH GOARM=${TARGETVARIANT#v} \
-    go build -trimpath -ldflags="-s -w" -o /out/shortr .
+    go build -trimpath -ldflags="-s -w" -o /out/shortr . \
+    && mkdir /out/data
 
 FROM gcr.io/distroless/static-debian12:nonroot AS runtime
 COPY --from=api-build /out/shortr /shortr
 COPY --from=client-build /app/apps/client/dist /srv/client
+# The file adapter writes here. The directory ships empty and owned by nonroot
+# (65532) so a volume mounted over it inherits that ownership and stays writable.
+COPY --from=api-build --chown=65532:65532 /out/data /data
 ENV STATIC_DIR=/srv/client PORT=8080
 EXPOSE 8080
 USER nonroot

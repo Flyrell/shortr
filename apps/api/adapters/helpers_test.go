@@ -3,6 +3,7 @@ package adapters
 import (
 	"context"
 	"maps"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -54,6 +55,29 @@ func newRedisAdapter(t *testing.T) (*Redis, *miniredis.Miniredis) {
 		}
 	})
 	return adapter, server
+}
+
+func fileValues(t *testing.T, overrides map[string]string) map[string]string {
+	t.Helper()
+
+	values := map[string]string{"FILE_PATH": filepath.Join(t.TempDir(), "shortr.json")}
+	maps.Copy(values, overrides)
+	return values
+}
+
+func newFileAdapter(t *testing.T, now clock, overrides map[string]string) *File {
+	t.Helper()
+
+	adapter, err := newFile(envFrom(fileValues(t, overrides)), now)
+	if err != nil {
+		t.Fatalf("newFile() error = %v", err)
+	}
+	t.Cleanup(func() {
+		if err := adapter.Close(); err != nil {
+			t.Errorf("Close() error = %v", err)
+		}
+	})
+	return adapter
 }
 
 type adapterCall struct {

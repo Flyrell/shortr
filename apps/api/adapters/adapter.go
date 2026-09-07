@@ -29,9 +29,16 @@ func New(name string, env Env) (Adapter, error) {
 	switch name {
 	case "memory":
 		return NewMemory(), nil
+	// The two constructors below are not returned directly: that would hand back
+	// a non-nil Adapter wrapping a nil pointer whenever the environment is
+	// incomplete.
+	case "file":
+		adapter, err := NewFile(env)
+		if err != nil {
+			return nil, err
+		}
+		return adapter, nil
 	case "redis":
-		// Returning NewRedis directly would hand back a non-nil Adapter
-		// wrapping a nil *Redis whenever the environment is incomplete.
 		adapter, err := NewRedis(env)
 		if err != nil {
 			return nil, err
