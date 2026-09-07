@@ -323,8 +323,10 @@ volumes:
                         <p class="route__line"><span class="verb">GET</span> <code>/{code}</code></p>
                         <p>
                             <code>302</code> to the target with <code>Cache-Control: no-store</code>. Neither
-                            rate limited nor bot filtered. <code>404 not_found</code> when the code is unknown,
-                            expired, or not 12 characters of <code>[0-9A-Za-z]</code>.
+                            rate limited nor bot filtered. <code>404</code> when the code is unknown, expired, or
+                            not 12 characters of <code>[0-9A-Za-z]</code> — a styled HTML page for a browser (any
+                            client whose <code>Accept</code> lists <code>text/html</code>), the
+                            <code>not_found</code> JSON shape for everyone else.
                         </p>
                     </article>
                     <article class="route">

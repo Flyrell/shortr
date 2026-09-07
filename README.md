@@ -198,8 +198,9 @@ curl -X POST http://localhost:8080/api/shorten \
 
 ### `GET /{code}`
 
-`302` to the target with `Cache-Control: no-store`. Neither rate limited nor bot filtered. `404 not_found`
-when the code is unknown, expired, or not 12 characters of `[0-9A-Za-z]`.
+`302` to the target with `Cache-Control: no-store`. Neither rate limited nor bot filtered. `404` when the
+code is unknown, expired, or not 12 characters of `[0-9A-Za-z]` — a styled HTML page for a browser (any
+client whose `Accept` lists `text/html`), the `not_found` JSON shape for everyone else.
 
 ### `GET /healthz`
 

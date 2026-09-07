@@ -686,3 +686,32 @@ body {
         transition-delay: 0ms !important;
     }
 }
+
+a.wordmark {
+    text-decoration: none;
+    color: inherit;
+}
+
+.notice {
+    padding: 24px;
+}
+
+.notice .label-row {
+    margin-bottom: 0;
+}
+
+.notice-status {
+    font: 600 1.0625rem/1.2 var(--ui);
+    letter-spacing: -0.015em;
+}
+
+.notice-body {
+    margin: 12px 0 24px;
+    max-width: 46ch;
+    color: var(--mut);
+    font-size: 1rem;
+}
+
+a.submit {
+    text-decoration: none;
+}

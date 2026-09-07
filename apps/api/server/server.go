@@ -78,7 +78,7 @@ func New(deps *Deps) *fiber.App {
 	api := app.Group("/api", bots, middleware.RateLimit(deps.RateLimitValue, deps.RateLimitWindow))
 	api.Post("/shorten", handlers.Shorten(deps.Shortener))
 
-	app.Get("/:code", handlers.Redirect(deps.Shortener))
+	app.Get("/:code", handlers.Redirect(deps.Shortener, deps.StaticDir))
 
 	return app
 }

@@ -8,7 +8,15 @@ import { build, context } from 'esbuild';
 const projectDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const srcDir = join(projectDir, 'src');
 const distDir = join(projectDir, 'dist');
-const staticFiles = ['index.html', 'robots.txt', 'favicon.svg', 'favicon.png', 'apple-touch-icon.png', 'og.png'];
+const staticFiles = [
+    'index.html',
+    'not-found.html',
+    'robots.txt',
+    'favicon.svg',
+    'favicon.png',
+    'apple-touch-icon.png',
+    'og.png',
+];
 
 function buildOptions(watchMode: boolean): BuildOptions {
     return {

@@ -4,7 +4,15 @@ import { run } from './build';
 
 type WatchListener = (event: string, filename: string | null) => void;
 
-const staticNames = ['index.html', 'robots.txt', 'favicon.svg', 'favicon.png', 'apple-touch-icon.png', 'og.png'];
+const staticNames = [
+    'index.html',
+    'not-found.html',
+    'robots.txt',
+    'favicon.svg',
+    'favicon.png',
+    'apple-touch-icon.png',
+    'og.png',
+];
 
 const mocks = vi.hoisted(() => ({
     build: vi.fn<(options: unknown) => Promise<void>>(),
